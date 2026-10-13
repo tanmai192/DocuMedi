@@ -207,6 +207,86 @@ def is_final_completion_response(patient_message: str) -> bool:
     return bool(re.match(pattern, norm))
 
 
+UNCERTAINTY_PATTERNS = [
+    r"\b(?:not\s+sure|i'?m\s+not\s+sure|unsure)\b",
+    r"\b(?:don'?t\s+know|do\s+not\s+know|i\s+don'?t\s+know)\b",
+    r"\b(?:uncertain|unknown)\b",
+    r"\b(?:can'?t\s+remember|cannot\s+remember|don'?t\s+recall|can'?t\s+recall|cannot\s+recall)\b",
+    r"\b(?:not\s+certain|no\s+idea)\b",
+]
+
+
+def is_uncertain_response(text: str) -> bool:
+    """Detect whether patient expressed uncertainty (e.g. 'I'm not sure', 'uncertain', 'don't know')."""
+    if not text:
+        return False
+    lower = text.lower().strip()
+    return any(re.search(pat, lower) for pat in UNCERTAINTY_PATTERNS)
+
+
+def is_allergy_question(text: Optional[str]) -> bool:
+    """
+    Detect whether an AI inquiry specifically asked about allergies.
+    Must return True even if the inquiry includes examples like 'allergies to medications or foods'.
+    Must return False for final confirmation inquiries.
+    """
+    if not text:
+        return False
+    if is_final_confirmation_question(text):
+        return False
+    lower = text.lower()
+    return bool(re.search(r"\b(?:allerg(?:y|ies|ic)?|nkda)\b", lower))
+
+
+def is_medication_question(text: Optional[str]) -> bool:
+    """
+    Detect whether an AI inquiry specifically asked about medications taken.
+    Must NOT trigger on allergy questions (e.g. 'known allergies, especially to medications or foods').
+    Must return False for final confirmation inquiries.
+    """
+    if not text:
+        return False
+    if is_final_confirmation_question(text):
+        return False
+    lower = text.lower()
+    if bool(re.search(r"\ballerg", lower)):
+        # If the inquiry mentions allergies, only classify as a medication question
+        # if it explicitly and separately inquires about currently taken medications.
+        if not re.search(r"\b(?:taking|prescribed|taking\s+any)\s+(?:prescription\s+)?medications?\b", lower):
+            return False
+    return bool(re.search(r"\b(?:prescription\s+medications?|medications?|over-the-counter|supplements?|currently\s+taking\s+any)\b", lower))
+
+
+def clean_medication_input(raw: str) -> str:
+    """Clean conversational filler while strictly preserving drug names, dosages, frequencies, and phrasing."""
+    cleaned = raw.strip()
+    cleaned = re.sub(
+        r"^(?:i\s+(?:also\s+)?(?:take|am\s+taking|'m\s+taking|took|use|am\s+using|'m\s+using|am\s+on|'m\s+on|have\s+been\s+taking)|currently\s+taking|taking|just|i've\s+taken|i\s+have\s+taken)\s+",
+        "",
+        cleaned,
+        flags=re.IGNORECASE
+    ).strip()
+    cleaned = re.sub(r"[.!?]+$", "", cleaned).strip()
+    if cleaned and cleaned[0].islower():
+        cleaned = cleaned[0].upper() + cleaned[1:]
+    return cleaned
+
+
+def clean_allergy_input(raw: str) -> str:
+    """Clean conversational filler while strictly preserving allergen names, reactions, and phrasing."""
+    cleaned = raw.strip()
+    cleaned = re.sub(
+        r"^(?:i\s+(?:am\s+|'m\s+)?(?:allergic\s+to|having\s+an\s+allergy\s+to)|allergy\s+to|allergies(?:\s+to)?|i\s+have\s+(?:an\s+)?allergy\s+to|i\s+have\s+allergies\s+to|allergic\s+with|just)\s+",
+        "",
+        cleaned,
+        flags=re.IGNORECASE
+    ).strip()
+    cleaned = re.sub(r"[.!?]+$", "", cleaned).strip()
+    if cleaned and cleaned[0].islower():
+        cleaned = cleaned[0].upper() + cleaned[1:]
+    return cleaned
+
+
 class ClinicalDialogueState:
     """
     Cumulative clinical memory of the entire consultation.
@@ -315,7 +395,7 @@ class ClinicalDialogueState:
             or norm_lower in {"no", "nope", "nah", "none", "neither", "nothing", "nil", "negative"}
             or lower in {"no", "noo", "nooo", "nope", "nah", "none", "neither", "nothing", "nil", "negative"}
         )
-        if is_pure_denial and previous_ai_message:
+        if is_pure_denial and previous_ai_message and not is_final_confirmation_question(previous_ai_message):
             prev_lower = previous_ai_message.lower()
             denied_candidates = [
                 ("fever", ["fever", "high temp", "temperature"]),
@@ -338,27 +418,27 @@ class ClinicalDialogueState:
                 self.turn_new_denials = set(found_denials)
 
             # Check if previous question asked if tea/steam/home remedies helped
-            if any(w in prev_lower for w in ["warm tea", "steam", "helped", "home remedies"]):
+            if any(w in prev_lower for w in ["warm tea", "steam", "helped", "home remedies"]) and not is_medication_question(previous_ai_message):
                 self.relieving_aggravating = "Home remedies (tea/steam) have not provided significant relief"
                 if is_latest:
                     self.turn_new_relieving_aggravating = True
 
             # Check if previous question asked about medications
-            if any(w in prev_lower for w in ["prescription medications", "over-the-counter", "medications", "currently taking any"]):
+            if is_medication_question(previous_ai_message):
                 if not self.medications:
                     self.medications = "None reported"
                     if is_latest:
                         self.turn_new_meds = True
 
             # Check if previous question asked about allergies
-            if any(w in prev_lower for w in ["known allergies", "allergies to", "allergic to"]):
+            if is_allergy_question(previous_ai_message):
                 if not self.allergies:
                     self.allergies = "No known drug allergies (NKDA)"
                     if is_latest:
                         self.turn_new_allergies = True
 
             # Check if previous question asked about medical/family history
-            if any(w in prev_lower for w in ["personal medical history", "chronic conditions", "family history"]):
+            if any(w in prev_lower for w in ["personal medical history", "chronic conditions", "family history"]) and not is_allergy_question(previous_ai_message):
                 if not self.past_medical_history:
                     self.past_medical_history = "No chronic conditions reported"
                 if not self.family_history:
@@ -581,8 +661,35 @@ class ClinicalDialogueState:
                         self.turn_new_relieving_aggravating = True
 
         # 8. Extract Medications
-        if not self.medications:
-            if any(k in lower for k in ["no meds", "no medication", "not taking any", "don't take any", "none"]):
+        if is_medication_question(previous_ai_message):
+            if is_uncertain_response(lower):
+                self.medications = "Uncertain"
+                if is_latest:
+                    self.turn_new_meds = True
+            elif (
+                is_pure_denial
+                or any(k in lower for k in [
+                    "no meds", "no medication", "no medications", "not taking any",
+                    "don't take any", "not on any", "no prescription",
+                    "take no medication", "takes no medication", "none reported", "none"
+                ])
+            ):
+                self.medications = "None reported"
+                if is_latest:
+                    self.turn_new_meds = True
+            elif any(w in lower for w in ["warm tea", "steam", "honey", "rest", "resting"]):
+                # Home remedies / lifestyle measures belong to relieving_aggravating
+                if not self.relieving_aggravating:
+                    self.relieving_aggravating = cleaned.capitalize()
+                    if is_latest:
+                        self.turn_new_relieving_aggravating = True
+            else:
+                self.medications = clean_medication_input(cleaned)
+                if is_latest:
+                    self.turn_new_meds = True
+        elif not self.medications or self.medications in ("Uncertain", "None reported"):
+            # Spontaneous medication reporting outside direct medication inquiry
+            if re.search(r"\b(?:no\s+(?:current\s+)?(?:prescription\s+)?(?:medications?|meds)|not\s+taking\s+(?:any\s+)?(?:meds|medications?|drugs?)|don'?t\s+take\s+(?:any\s+)?(?:meds|medications?)|take\s+no\s+(?:prescription\s+)?medications?|no\s+medication|no\s+meds)\b", lower):
                 self.medications = "None reported"
                 if is_latest:
                     self.turn_new_meds = True
@@ -596,28 +703,68 @@ class ClinicalDialogueState:
                 ]
                 found_meds = []
                 for drug in known_drugs:
-                    pattern = rf"\b{drug}(?:\s+\d+\s*mg)?\b"
+                    pattern = rf"\b({drug}(?:[,\s]+\d+\s*(?:mg|mcg|ml|g))?(?:\s+(?:daily|twice\s+a\s+day|every\s+day|as\s+needed))?)\b"
                     found = re.findall(pattern, lower)
                     if found:
                         found_meds.extend(found)
                 if found_meds:
-                    self.medications = ", ".join(dict.fromkeys(found_meds))
+                    self.medications = ", ".join(dict.fromkeys(found_meds)).capitalize()
                     if is_latest:
                         self.turn_new_meds = True
+                else:
+                    med_match = re.search(
+                        r"\b(?:i\s+(?:also\s+)?(?:take|am\s+taking|'m\s+taking|took|use|am\s+using|'m\s+using|am\s+on|'m\s+on)|currently\s+taking|taking|took|prescribed)\s+([^.,;\n]+)",
+                        cleaned,
+                        re.IGNORECASE
+                    )
+                    if med_match:
+                        self.medications = clean_medication_input(med_match.group(1))
+                        if is_latest:
+                            self.turn_new_meds = True
 
         # 9. Extract Allergies
-        if not self.allergies:
-            if re.search(r"\b(?:no\s+(?:known\s+)?(?:drug\s+|food\s+)?allergies|nkda|not\s+allergic|denies\s+allergies|no\s+allergies)\b", lower):
+        if is_allergy_question(previous_ai_message):
+            # Check if patient actually reported medications instead of an allergy:
+            is_answering_med = (
+                bool(re.search(r"\b(?:i\s+(?:take|am\s+taking|'m\s+taking|took|use)|taking|took|prescribed)\s+", cleaned, re.IGNORECASE))
+                or any(d in lower for d in ["paracetamol", "ibuprofen", "aspirin", "tylenol", "advil", "metformin", "naproxen", "lisinopril", "albuterol"])
+            )
+            if is_answering_med:
+                # Do NOT treat as allergy!
+                pass
+            elif is_uncertain_response(lower):
+                self.allergies = "Uncertain"
+                if is_latest:
+                    self.turn_new_allergies = True
+            elif (
+                is_pure_denial
+                or any(k in lower for k in [
+                    "no allergies", "no known allergies", "no drug allergies",
+                    "nkda", "not allergic", "none that i know of",
+                    "denies allergies", "have no known allergies", "none"
+                ])
+            ):
+                self.allergies = "No known drug allergies (NKDA)"
+                if is_latest:
+                    self.turn_new_allergies = True
+            else:
+                self.allergies = clean_allergy_input(cleaned)
+                if is_latest:
+                    self.turn_new_allergies = True
+        elif not self.allergies:
+            # Spontaneous allergy reporting outside direct allergy inquiry
+            if re.search(r"\b(?:no\s+(?:known\s+)?(?:drug\s+|food\s+)?allergies|nkda|not\s+allergic(?:\s+to\s+anything)?|denies\s+allergies|have\s+no\s+(?:known\s+)?allergies|no\s+allergies)\b", lower):
                 self.allergies = "No known drug allergies (NKDA)"
                 if is_latest:
                     self.turn_new_allergies = True
             else:
                 allergy_match = re.search(
-                    r"\b(?:allergic\s+to|allergy\s+to|allergies(?:\s+to)?)\s+([a-z\s,]+)\b",
-                    lower
+                    r"\b(?:allergic\s+to|allergy\s+to|allergies(?:\s+to)?|allergic\s+with)\s+([^.,;\n]+)",
+                    cleaned,
+                    re.IGNORECASE
                 )
                 if allergy_match:
-                    self.allergies = allergy_match.group(1).strip()
+                    self.allergies = clean_allergy_input(allergy_match.group(1))
                     if is_latest:
                         self.turn_new_allergies = True
                 elif any(k in lower for k in ["penicillin", "sulfa", "latex", "peanuts", "pollen"]):
@@ -666,7 +813,7 @@ def build_clinical_state_from_history(
     for msg in history:
         role = msg.get("sender_role")
         content = msg.get("message_content", "")
-        if role == "ai":
+        if role in ("ai", "assistant"):
             last_ai_text = content
         elif role == "patient" and content:
             state.ingest_turn(content, is_latest=False, previous_ai_message=last_ai_text)
@@ -772,11 +919,15 @@ def generate_empathetic_acknowledgment(state: ClinicalDialogueState, latest_mess
         if state.turn_new_meds and state.medications:
             if state.medications == "None reported":
                 recorded.append("you are not currently taking any medications")
+            elif state.medications in ("Uncertain", "Unknown", "Not sure"):
+                recorded.append("your medication status is uncertain")
             else:
-                recorded.append(f"you took {state.medications}")
+                recorded.append(f"you take {state.medications}")
         if state.turn_new_allergies and state.allergies:
             if state.allergies == "No known drug allergies (NKDA)":
                 recorded.append("you have no known allergies")
+            elif state.allergies in ("Uncertain", "Unknown", "Not sure"):
+                recorded.append("your allergy status is uncertain")
             else:
                 recorded.append(f"your allergies ({state.allergies})")
         return f"Understood, I have recorded that {', and '.join(recorded)}."

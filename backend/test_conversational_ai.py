@@ -13,6 +13,8 @@ Verifies:
 9. Safe cleanup of test records in MySQL database.
 """
 
+import io
+from pypdf import PdfReader
 from fastapi.testclient import TestClient
 
 from main import app
@@ -518,6 +520,154 @@ def run_conversational_ai_tests():
         assert c8_ai6 != "Okay, thank you. You can select Finish Consultation when you're ready to review your clinical note."
         assert "ear" in c8_ai6.lower() or "throbbing" in c8_ai6.lower() or "noted" in c8_ai6.lower()
         print("  [OK] Final confirmation correctly handles 'no', 'nothing else', preserves additional medical details, and does not prematurely finish case.")
+
+        # Test 11: Medication and Allergy Preservation (8 Required Scenarios & Full Pipeline Verification)
+        print("\n[11/11] Testing Medication and Allergy Preservation (8 required scenarios & full pipeline)...")
+        def run_med_allergy_pipeline_case(case_title: str, user_msgs: list):
+            c_res = client.post("/cases", json={"case_title": case_title}, headers=headers)
+            assert c_res.status_code == 201, c_res.text
+            cid = c_res.json()["id"]
+
+            for m in user_msgs:
+                mr = client.post(f"/cases/{cid}/messages", json={"message_content": m}, headers=headers)
+                assert mr.status_code == 200, mr.text
+
+            # End case
+            end_r = client.post(f"/cases/{cid}/end", headers=headers)
+            assert end_r.status_code == 200, end_r.text
+
+            # Generate note
+            gen_r = client.post(f"/cases/{cid}/generate-note", headers=headers)
+            assert gen_r.status_code == 200, gen_r.text
+            draft_note = gen_r.json()["note"]
+
+            # Save note to MySQL
+            save_r = client.post(f"/cases/{cid}/notes", json=draft_note, headers=headers)
+            assert save_r.status_code == 201, save_r.text
+            saved_id = save_r.json()["id"]
+
+            # Retrieve note by ID from MySQL
+            get_r = client.get(f"/notes/{saved_id}", headers=headers)
+            assert get_r.status_code == 200, get_r.text
+            retrieved_note = get_r.json()
+
+            # Generate and download PDF
+            pdf_r = client.get(f"/notes/{saved_id}/pdf", headers=headers)
+            assert pdf_r.status_code == 200, pdf_r.text
+            reader = PdfReader(io.BytesIO(pdf_r.content))
+            extracted_pdf_text = "".join(page.extract_text() or "" for page in reader.pages)
+
+            return retrieved_note, extracted_pdf_text
+
+        # 1. "I take paracetamol, 500 mg daily." (Positive info provided)
+        s1_note, s1_pdf = run_med_allergy_pipeline_case("Med Scenario 1", [
+            "I have a fever and body aches.",
+            "since yesterday",
+            "7 out of 10",
+            "resting in bed",
+            "I take paracetamol, 500 mg daily."
+        ])
+        assert "paracetamol" in s1_note["medications"].lower(), "Medication name must be preserved"
+        assert "500 mg" in s1_note["medications"].lower(), "Dosage must be preserved"
+        assert "daily" in s1_note["medications"].lower(), "Frequency must be preserved"
+        assert "paracetamol" in s1_pdf.lower()
+        assert "500 mg" in s1_pdf.lower()
+        print("  [OK] Case 1: 'I take paracetamol, 500 mg daily.' -> dosage, frequency, and details preserved in note & PDF.")
+
+        # 2. "I am allergic to penicillin." (Positive allergy provided)
+        s2_note, s2_pdf = run_med_allergy_pipeline_case("Allergy Scenario 2", [
+            "I have a persistent rash.",
+            "started 2 days ago",
+            "4",
+            "itchy",
+            "cool compresses",
+            "no medications",
+            "I am allergic to penicillin."
+        ])
+        assert "penicillin" in s2_note["allergies"].lower()
+        assert "penicillin" in s2_pdf.lower()
+        print("  [OK] Case 2: 'I am allergic to penicillin.' -> specific allergen preserved in note & PDF.")
+
+        # 3. "I take no medication." (Explicit negative response)
+        s3_note, s3_pdf = run_med_allergy_pipeline_case("Med Scenario 3", [
+            "Throbbing headache.",
+            "since morning",
+            "6",
+            "quiet dark room",
+            "I take no medication."
+        ])
+        assert s3_note["medications"] == "None reported", f"Expected 'None reported', got {s3_note['medications']}"
+        assert "none reported" in s3_pdf.lower()
+        print("  [OK] Case 3: 'I take no medication.' -> explicitly recorded as 'None reported'.")
+
+        # 4. "I have no known allergies." (Explicit negative response)
+        s4_note, s4_pdf = run_med_allergy_pipeline_case("Allergy Scenario 4", [
+            "Stomach cramps.",
+            "for 2 hours",
+            "5",
+            "drinking water",
+            "no medications",
+            "I have no known allergies."
+        ])
+        assert s4_note["allergies"] == "No known drug allergies (NKDA)", f"Expected NKDA, got {s4_note['allergies']}"
+        assert "nkda" in s4_pdf.lower() or "no known drug allergies" in s4_pdf.lower()
+        print("  [OK] Case 4: 'I have no known allergies.' -> explicitly recorded as 'No known drug allergies (NKDA)'.")
+
+        # 5. Medication unanswered, allergy answered (Isolation: medication must stay 'Not provided')
+        s5_note, s5_pdf = run_med_allergy_pipeline_case("Isolation Scenario 5", [
+            "Mild knee stiffness.",
+            "for 1 week",
+            "3",
+            "walking helps",
+            "I have no known allergies."
+        ])
+        assert s5_note["medications"] == "Not provided", f"Unanswered medication must be 'Not provided', got {s5_note['medications']}"
+        assert s5_note["allergies"] == "No known drug allergies (NKDA)"
+        assert "not provided" in s5_pdf.lower()
+        print("  [OK] Case 5: Medication unanswered, allergy answered -> medication strictly preserved as 'Not provided'.")
+
+        # 6. Allergy unanswered, medication answered (Isolation: allergy must stay 'Not provided')
+        s6_note, s6_pdf = run_med_allergy_pipeline_case("Isolation Scenario 6", [
+            "Mild cough.",
+            "for 3 days",
+            "4",
+            "dry cough",
+            "warm tea did not help",
+            "I take paracetamol, 500 mg daily."
+        ])
+        assert "paracetamol" in s6_note["medications"].lower()
+        assert "500 mg" in s6_note["medications"].lower()
+        assert s6_note["allergies"] == "Not provided", f"Unanswered allergy must be 'Not provided', got {s6_note['allergies']}"
+        print("  [OK] Case 6: Allergy unanswered, medication answered -> allergy strictly preserved as 'Not provided'.")
+
+        # 7. Both fields unanswered (Both must strictly stay 'Not provided')
+        s7_note, s7_pdf = run_med_allergy_pipeline_case("Both Unanswered Scenario 7", [
+            "Lower back ache.",
+            "since yesterday",
+            "5 out of 10"
+        ])
+        assert s7_note["medications"] == "Not provided", f"Expected 'Not provided', got {s7_note['medications']}"
+        assert s7_note["allergies"] == "Not provided", f"Expected 'Not provided', got {s7_note['allergies']}"
+        print("  [OK] Case 7: Both fields unanswered -> both strictly preserved as 'Not provided'.")
+
+        # 8. An uncertain answer, such as "I'm not sure." (Uncertainty preserved)
+        s8a_note, s8a_pdf = run_med_allergy_pipeline_case("Uncertain Med Scenario 8a", [
+            "I have chest tightness and cough for 2 days. The pain is 6 out of 10 and it is a dry cough. Warm tea did not help.",
+            "I'm not sure.",  # Directly answers medication inquiry with uncertainty
+        ])
+        assert s8a_note["medications"] == "Uncertain", f"Expected 'Uncertain', got {s8a_note['medications']}"
+        assert "uncertain" in s8a_pdf.lower()
+        print("  [OK] Case 8a: Medication uncertainty 'I'm not sure.' -> preserved as 'Uncertain' in note and PDF.")
+
+        s8b_note, s8b_pdf = run_med_allergy_pipeline_case("Uncertain Allergy Scenario 8b", [
+            "I have chest tightness and cough for 2 days. The pain is 6 out of 10 and it is a dry cough. Warm tea did not help.",
+            "no medications",
+            "I'm not sure.",  # Directly answers allergy inquiry with uncertainty
+        ])
+        assert s8b_note["medications"] == "None reported"
+        assert s8b_note["allergies"] == "Uncertain", f"Expected 'Uncertain', got {s8b_note['allergies']}"
+        assert "uncertain" in s8b_pdf.lower()
+        print("  [OK] Case 8b: Allergy uncertainty 'I'm not sure.' -> preserved as 'Uncertain' in note and PDF.")
 
         print("\n" + "=" * 75)
         print("SUCCESS: ALL CONVERSATIONAL AI & SYMPTOM TRACKING TESTS PASSED!")

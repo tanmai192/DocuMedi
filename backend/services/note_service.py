@@ -44,6 +44,16 @@ CRITICAL INSTRUCTIONS & MEDICAL SAFETY RULES:
    Neutrally summarize the reported symptoms. Explicitly state that definitive clinical assessment and treatment require a qualified healthcare professional. Do NOT give a definitive diagnosis. Do NOT prescribe medication.
 6. For Follow-up:
    Recommend consulting a qualified healthcare professional or seeking urgent care if symptoms worsen. Do NOT invent a calendar appointment date.
+7. For Medications:
+   - If the patient reported medications, preserve exact names, dosages, frequencies, and details reported.
+   - If the patient explicitly denied medications, write: "None reported".
+   - If the patient reported uncertainty, write: "Uncertain".
+   - If medications were not discussed or not provided, write EXACTLY: "Not provided". Never write "No" or "None".
+8. For Allergies:
+   - If the patient reported allergies, state the specific allergens reported.
+   - If the patient explicitly denied known allergies, write: "No known drug allergies (NKDA)".
+   - If the patient reported uncertainty, write: "Uncertain".
+   - If allergies were not discussed or not provided, write EXACTLY: "Not provided". Never write "No" or "None".
 
 You must return a valid, strictly formatted JSON object with these EXACT 11 keys:
 {
@@ -129,10 +139,19 @@ def extract_fallback_note(history: List[Dict[str, str]]) -> Dict[str, str]:
             else:
                 hpi_parts.append(f"Relieving or aggravating factors: {ra}.")
 
-        if state.medications and state.medications != "None reported":
+        if state.medications and state.medications not in ("None reported", "Not provided", "Uncertain", "Unknown", "Not sure"):
             hpi_parts.append(f"Current medication or treatment used: {state.medications}.")
         elif state.medications == "None reported":
             hpi_parts.append("Patient denies taking medications for these symptoms.")
+        elif state.medications in ("Uncertain", "Unknown", "Not sure"):
+            hpi_parts.append("Current medication usage is uncertain.")
+
+        if state.allergies and state.allergies not in ("No known drug allergies (NKDA)", "Not provided", "Uncertain", "Unknown", "Not sure"):
+            hpi_parts.append(f"Reported allergies: {state.allergies}.")
+        elif state.allergies == "No known drug allergies (NKDA)":
+            hpi_parts.append("Patient denies known drug or food allergies.")
+        elif state.allergies in ("Uncertain", "Unknown", "Not sure"):
+            hpi_parts.append("Known allergy status is uncertain.")
 
         if state.negative_symptoms:
             hpi_parts.append(f"Patient explicitly denies {', '.join(state.negative_symptoms)}.")
@@ -313,6 +332,12 @@ async def generate_note_from_dialogue(
         if not val or not str(val).strip():
             val = "Not provided"
         sanitized_note[key] = str(val).strip()
+
+    # Normalize single-word negative boolean-like fallbacks if returned by external LLM
+    if sanitized_note.get("medications", "").strip().lower() in ("no", "none", "nil", "false", "n/a", "na"):
+        sanitized_note["medications"] = "None reported"
+    if sanitized_note.get("allergies", "").strip().lower() in ("no", "none", "nil", "false", "n/a", "na"):
+        sanitized_note["allergies"] = "No known drug allergies (NKDA)"
 
     # Safety enforcement: Physical Examination must never be invented
     sanitized_note["physical_examination"] = "Not performed — information not collected during the patient conversation"
