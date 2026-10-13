@@ -669,6 +669,103 @@ def run_conversational_ai_tests():
         assert "uncertain" in s8b_pdf.lower()
         print("  [OK] Case 8b: Allergy uncertainty 'I'm not sure.' -> preserved as 'Uncertain' in note and PDF.")
 
+        # Test 12: Past Medical History & Allergies Persistence Suite (Full Pipeline & Closing Response)
+        print("\n[12/12] Testing Past Medical History & Allergies Persistence Suite (Full Pipeline & Closing Response)...")
+
+        # 1. Positive PMH and Allergies: dialogue -> note -> MySQL -> retrieval -> PDF
+        pmh_pos_note, pmh_pos_pdf = run_med_allergy_pipeline_case("Positive PMH & Allergy Case", [
+            "I have been having frequent headaches and dizziness for 3 days. Rated 5/10.",
+            "Resting in a quiet room brings some relief.",
+            "I take no medication.",
+            "I am allergic to penicillin and pollen.",
+            "I was diagnosed with asthma and type 2 diabetes."
+        ])
+        assert "asthma" in pmh_pos_note["past_medical_history"].lower(), "Asthma must be preserved in PMH"
+        assert "diabetes" in pmh_pos_note["past_medical_history"].lower(), "Diabetes must be preserved in PMH"
+        assert "penicillin" in pmh_pos_note["allergies"].lower(), "Penicillin must be preserved in Allergies"
+        assert "pollen" in pmh_pos_note["allergies"].lower(), "Pollen must be preserved in Allergies"
+        assert "asthma" in pmh_pos_pdf.lower(), "Asthma must be rendered in PDF"
+        assert "diabetes" in pmh_pos_pdf.lower(), "Diabetes must be rendered in PDF"
+        assert "penicillin" in pmh_pos_pdf.lower(), "Penicillin must be rendered in PDF"
+        print("  [OK] Case 1: Positive PMH ('asthma and type 2 diabetes') & Allergies ('penicillin and pollen') preserved in note, MySQL, and PDF.")
+
+        # 2. Explicit negative PMH: dialogue -> note -> MySQL -> retrieval -> PDF
+        pmh_neg_note, pmh_neg_pdf = run_med_allergy_pipeline_case("Negative PMH Case", [
+            "Severe stomach discomfort for 2 days. 7/10 pain.",
+            "Nothing really helps.",
+            "no medications",
+            "no allergies",
+            "No chronic conditions reported."
+        ])
+        assert pmh_neg_note["past_medical_history"] == "No chronic conditions reported", (
+            f"Expected 'No chronic conditions reported', got '{pmh_neg_note['past_medical_history']}'"
+        )
+        assert pmh_neg_note["allergies"] == "No known drug allergies (NKDA)"
+        assert "no chronic conditions reported" in pmh_neg_pdf.lower()
+        print("  [OK] Case 2: Explicit negative PMH -> recorded as 'No chronic conditions reported' in note, MySQL, and PDF.")
+
+        # 3. Unanswered PMH: consultation ends without PMH -> remains 'Not provided', never 'No' or 'None'
+        pmh_unans_note, pmh_unans_pdf = run_med_allergy_pipeline_case("Unanswered PMH Case", [
+            "Sore throat since yesterday.",
+            "4 out of 10 discomfort",
+            "Warm tea helped a bit"
+        ])
+        assert pmh_unans_note["past_medical_history"] == "Not provided", (
+            f"Unanswered PMH must be 'Not provided', got '{pmh_unans_note['past_medical_history']}'"
+        )
+        assert pmh_unans_note["past_medical_history"] != "No"
+        assert pmh_unans_note["past_medical_history"] != "None"
+        assert "not provided" in pmh_unans_pdf.lower()
+        print("  [OK] Case 3: Unanswered PMH strictly preserved as 'Not provided' (never converted to 'No' or 'None').")
+
+        # 4. Uncertain PMH: 'I'm not sure.' -> preserved as 'Uncertain'
+        pmh_unc_note, pmh_unc_pdf = run_med_allergy_pipeline_case("Uncertain PMH Case", [
+            "Chest tightness and cough for 2 days. The pain is 6 out of 10 and it is a dry cough. Warm tea did not help.",
+            "no medications",
+            "no allergies",
+            "I'm not sure."  # Directly answers medical history inquiry with uncertainty
+        ])
+        assert pmh_unc_note["past_medical_history"] == "Uncertain", (
+            f"Expected 'Uncertain', got '{pmh_unc_note['past_medical_history']}'"
+        )
+        assert "uncertain" in pmh_unc_pdf.lower()
+        print("  [OK] Case 4: Uncertain PMH ('I'm not sure.') -> preserved as 'Uncertain' in note, MySQL, and PDF.")
+
+        # 5. Distinct condition phrasing outside standard list: eczema and high cholesterol
+        pmh_custom_note, pmh_custom_pdf = run_med_allergy_pipeline_case("Custom Conditions PMH Case", [
+            "Dry cough for a week. 4/10.",
+            "Resting helps.",
+            "no medications",
+            "no allergies",
+            "I have eczema and high cholesterol."
+        ])
+        assert "eczema" in pmh_custom_note["past_medical_history"].lower(), "Eczema must be captured"
+        assert "cholesterol" in pmh_custom_note["past_medical_history"].lower(), "Cholesterol must be captured"
+        assert "eczema" in pmh_custom_pdf.lower()
+        print("  [OK] Case 5: Custom conditions ('eczema and high cholesterol') accurately captured and preserved in PDF.")
+
+        # 6. Consultation closing response verification:
+        # Check that negative completion reply matches exact phrase and case stays active
+        closing_case = client.post("/cases", json={"case_title": "Closing Response Verification Case"}, headers=headers)
+        closing_cid = closing_case.json()["id"]
+        client.post(f"/cases/{closing_cid}/messages", json={"message_content": "headache for 2 days, 5/10, throbbing"}, headers=headers)
+        client.post(f"/cases/{closing_cid}/messages", json={"message_content": "dark room helps"}, headers=headers)
+        client.post(f"/cases/{closing_cid}/messages", json={"message_content": "no medications"}, headers=headers)
+        client.post(f"/cases/{closing_cid}/messages", json={"message_content": "no allergies"}, headers=headers)
+        client.post(f"/cases/{closing_cid}/messages", json={"message_content": "no chronic conditions"}, headers=headers)
+
+        # Assistant invites to finish or add anything else. Patient responds 'nothing else'
+        closing_turn = client.post(f"/cases/{closing_cid}/messages", json={"message_content": "nothing else"}, headers=headers)
+        assert closing_turn.status_code == 200
+        closing_ai_reply = closing_turn.json()["ai_response"]["message_content"]
+        expected_closing = "Okay, thank you. You can select Finish Consultation when you're ready to review your clinical note."
+        assert closing_ai_reply == expected_closing, f"Expected exact closing reply, got: '{closing_ai_reply}'"
+
+        # Verify case remains active until user clicks finish
+        check_case = client.get(f"/cases/{closing_cid}", headers=headers)
+        assert check_case.json()["status"] == "active", "Case must remain active until user finishes"
+        print("  [OK] Case 6: Exact closing response verified and case remains active until Finish Consultation is selected.")
+
         print("\n" + "=" * 75)
         print("SUCCESS: ALL CONVERSATIONAL AI & SYMPTOM TRACKING TESTS PASSED!")
         print("=" * 75)

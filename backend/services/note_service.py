@@ -54,6 +54,11 @@ CRITICAL INSTRUCTIONS & MEDICAL SAFETY RULES:
    - If the patient explicitly denied known allergies, write: "No known drug allergies (NKDA)".
    - If the patient reported uncertainty, write: "Uncertain".
    - If allergies were not discussed or not provided, write EXACTLY: "Not provided". Never write "No" or "None".
+9. For Past Medical History:
+   - If the patient reported past conditions or diagnoses, preserve the specific conditions and phrasing reported.
+   - If the patient explicitly denied chronic conditions or past medical history, write: "No chronic conditions reported".
+   - If the patient reported uncertainty, write: "Uncertain".
+   - If past medical history was not discussed or not provided, write EXACTLY: "Not provided". Never write "No" or "None".
 
 You must return a valid, strictly formatted JSON object with these EXACT 11 keys:
 {
@@ -152,6 +157,13 @@ def extract_fallback_note(history: List[Dict[str, str]]) -> Dict[str, str]:
             hpi_parts.append("Patient denies known drug or food allergies.")
         elif state.allergies in ("Uncertain", "Unknown", "Not sure"):
             hpi_parts.append("Known allergy status is uncertain.")
+
+        if state.past_medical_history and state.past_medical_history not in ("No chronic conditions reported", "Not provided", "Uncertain", "Unknown", "Not sure"):
+            hpi_parts.append(f"Past medical history includes: {state.past_medical_history}.")
+        elif state.past_medical_history == "No chronic conditions reported":
+            hpi_parts.append("Patient denies past chronic medical conditions.")
+        elif state.past_medical_history in ("Uncertain", "Unknown", "Not sure"):
+            hpi_parts.append("Past medical history is uncertain.")
 
         if state.negative_symptoms:
             hpi_parts.append(f"Patient explicitly denies {', '.join(state.negative_symptoms)}.")
@@ -338,6 +350,8 @@ async def generate_note_from_dialogue(
         sanitized_note["medications"] = "None reported"
     if sanitized_note.get("allergies", "").strip().lower() in ("no", "none", "nil", "false", "n/a", "na"):
         sanitized_note["allergies"] = "No known drug allergies (NKDA)"
+    if sanitized_note.get("past_medical_history", "").strip().lower() in ("no", "none", "nil", "false", "n/a", "na", "healthy", "no medical history", "no chronic conditions"):
+        sanitized_note["past_medical_history"] = "No chronic conditions reported"
 
     # Safety enforcement: Physical Examination must never be invented
     sanitized_note["physical_examination"] = "Not performed — information not collected during the patient conversation"

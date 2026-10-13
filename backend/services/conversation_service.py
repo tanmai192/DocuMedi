@@ -209,6 +209,7 @@ STRICT DIALOGUE RULES FOR YOUR RESPONSE:
    - If Relieving/Aggravating Factors are confirmed ({state.relieving_aggravating}), NEVER ask what makes it better or worse, or what provides relief.
    - If Medications are confirmed ({state.medications}), NEVER ask if they take medications.
    - If Allergies are confirmed ({state.allergies}), NEVER ask about allergies.
+   - If Medical/Family History is confirmed ({state.past_medical_history or state.family_history}), NEVER ask about medical history or chronic conditions.
 3. NEW SYMPTOMS: If a new symptom was mentioned, warmly acknowledge it and explore how it connects to earlier symptoms.
 4. Ask ONLY ONE relevant next question focusing strictly on what is still marked 'NOT ANSWERED' above.
 5. FINAL CONFIRMATION & COMPLETION:

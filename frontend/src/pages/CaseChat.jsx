@@ -195,7 +195,7 @@ export default function CaseChat() {
       {showEndConfirm && (
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(51, 43, 39, 0.5)', zIndex: 100,
+          backgroundColor: 'rgba(20, 10, 12, 0.75)', zIndex: 100,
           display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem'
         }}>
           <div className="card" style={{ maxWidth: '440px', width: '100%', padding: '1.75rem', boxShadow: 'var(--shadow-card)', border: '1px solid var(--color-border)' }}>

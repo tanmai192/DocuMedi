@@ -10,12 +10,12 @@ export default function Logo({ showTagline = true, to = '/dashboard' }) {
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
       >
-        <rect width="36" height="36" rx="10" fill="#3D2528" stroke="#E8DCE0" strokeWidth="1" />
+        <rect width="36" height="36" rx="10" fill="#3D2528" stroke="#634046" strokeWidth="1" />
         {/* Document Sheet */}
         <path
           d="M10 8C10 6.89543 10.8954 6 12 6H20L26 12V28C26 29.1046 25.1046 30 24 30H12C10.8954 30 10 29.1046 10 28V8Z"
-          fill="#FFFFFF"
-          stroke="#E8DCE0"
+          fill="#4A2E32"
+          stroke="#634046"
           strokeWidth="1"
         />
         {/* Document Fold */}

@@ -84,6 +84,31 @@ def normalize_patient_text(text: str) -> str:
     return cleaned
 
 
+def get_last_question(text: Optional[str]) -> str:
+    """
+    Extracts the actual inquiry portion of an AI message.
+    AI responses often begin with an active-listening acknowledgment reflecting
+    previous patient answers (e.g. 'Understood, I have recorded that you are not currently taking any medications.').
+    Extracting only the actual questions or final sentence prevents acknowledgments
+    from polluting inquiry classification and duplicate detection.
+    """
+    if not text:
+        return ""
+    # Find all question sentences ending with '?'
+    questions = re.findall(r'[^.!?\n]+(?:\?|$)', text)
+    q_only = [q.strip() for q in questions if q.strip().endswith('?')]
+    if q_only:
+        return " ".join(q_only)
+    # If no explicit '?', strip common acknowledgment prefixes
+    cleaned = re.sub(
+        r'^(?:Understood|Got it|Thank you|Thanks|I hear you|I\'m really sorry|I\'m sorry|I understand|I have noted)[^.!?\n]*[.!?]',
+        '',
+        text,
+        flags=re.IGNORECASE
+    ).strip()
+    return cleaned or text
+
+
 def is_relief_or_aggravating_question(text: Optional[str]) -> bool:
     """
     Identifies whether an AI inquiry asks if anything relieves, worsens,
@@ -91,7 +116,10 @@ def is_relief_or_aggravating_question(text: Optional[str]) -> bool:
     """
     if not text:
         return False
-    lower = text.lower()
+    if is_final_confirmation_question(text):
+        return False
+    inquiry = get_last_question(text)
+    lower = inquiry.lower()
     phrases = [
         "better or worse", "better, or worse", "worse, or better",
         "better and worse", "makes it worse", "make it worse",
@@ -122,9 +150,16 @@ def is_final_confirmation_question(text: Optional[str]) -> bool:
         return True
     if "finalize your consultation" in t_lower or "finalize our consultation" in t_lower:
         return True
-    if "anything else" in t_lower and any(w in t_lower for w in ["finalize", "consultation note", "finish", "conclude", "include", "add", "share"]):
+    if "anything else" in t_lower and any(w in t_lower for w in ["finalize", "consultation note", "finish", "conclude", "include", "add", "share", "mention", "tell", "discuss"]):
         return True
-    if "finish consultation" in t_lower and any(w in t_lower for w in ["anything else", "other details", "share any", "feel free to share", "any other", "whenever you feel ready", "when you're ready"]):
+    if "finish consultation" in t_lower and any(w in t_lower for w in ["anything else", "other details", "share any", "feel free to share", "any other", "whenever you feel ready", "when you're ready", "would like to add"]):
+        return True
+    if any(p in t_lower for p in [
+        "anything else you'd like to add", "anything else you would like to add",
+        "anything else to add", "anything more to add",
+        "any other symptoms or details you would like to share",
+        "anything else you want to include", "anything else you would like to include"
+    ]):
         return True
     return False
 
@@ -234,7 +269,8 @@ def is_allergy_question(text: Optional[str]) -> bool:
         return False
     if is_final_confirmation_question(text):
         return False
-    lower = text.lower()
+    inquiry = get_last_question(text)
+    lower = inquiry.lower()
     return bool(re.search(r"\b(?:allerg(?:y|ies|ic)?|nkda)\b", lower))
 
 
@@ -248,7 +284,8 @@ def is_medication_question(text: Optional[str]) -> bool:
         return False
     if is_final_confirmation_question(text):
         return False
-    lower = text.lower()
+    inquiry = get_last_question(text)
+    lower = inquiry.lower()
     if bool(re.search(r"\ballerg", lower)):
         # If the inquiry mentions allergies, only classify as a medication question
         # if it explicitly and separately inquires about currently taken medications.
@@ -277,6 +314,35 @@ def clean_allergy_input(raw: str) -> str:
     cleaned = raw.strip()
     cleaned = re.sub(
         r"^(?:i\s+(?:am\s+|'m\s+)?(?:allergic\s+to|having\s+an\s+allergy\s+to)|allergy\s+to|allergies(?:\s+to)?|i\s+have\s+(?:an\s+)?allergy\s+to|i\s+have\s+allergies\s+to|allergic\s+with|just)\s+",
+        "",
+        cleaned,
+        flags=re.IGNORECASE
+    ).strip()
+    cleaned = re.sub(r"[.!?]+$", "", cleaned).strip()
+    if cleaned and cleaned[0].islower():
+        cleaned = cleaned[0].upper() + cleaned[1:]
+    return cleaned
+
+
+def is_history_question(text: Optional[str]) -> bool:
+    """
+    Detect whether an AI inquiry specifically asked about past medical history or chronic conditions.
+    Must return False for final confirmation inquiries and allergy-only questions.
+    """
+    if not text:
+        return False
+    if is_final_confirmation_question(text):
+        return False
+    inquiry = get_last_question(text)
+    lower = inquiry.lower()
+    return bool(re.search(r"\b(?:personal\s+medical\s+history|medical\s+history|chronic\s+conditions?|past\s+illness(?:es)?|underlying\s+conditions?|pre-existing\s+conditions?)\b", lower))
+
+
+def clean_history_input(raw: str) -> str:
+    """Clean conversational filler while strictly preserving condition names, diagnoses, and phrasing."""
+    cleaned = raw.strip()
+    cleaned = re.sub(
+        r"^(?:i\s+(?:also\s+)?(?:have|had|was\s+diagnosed\s+with|suffer\s+from|'ve\s+had|am\s+diagnosed\s+with|got)|diagnosed\s+with|history\s+of|just|i\s+only\s+have|my\s+history\s+is)\s+",
         "",
         cleaned,
         flags=re.IGNORECASE
@@ -319,6 +385,7 @@ class ClinicalDialogueState:
         self.turn_new_relieving_aggravating: bool = False
         self.turn_new_meds: bool = False
         self.turn_new_allergies: bool = False
+        self.turn_new_history: bool = False
         self.turn_new_denials: Set[str] = set()
         self.turn_needs_clarification: Optional[str] = None
 
@@ -376,6 +443,7 @@ class ClinicalDialogueState:
             self.turn_new_relieving_aggravating = False
             self.turn_new_meds = False
             self.turn_new_allergies = False
+            self.turn_new_history = False
             self.turn_new_denials = set()
             self.turn_needs_clarification = None
 
@@ -621,8 +689,8 @@ class ClinicalDialogueState:
                     self.turn_new_relieving_aggravating = True
 
             # 7d. Explicit relieving factor stated
-            elif any(k in lower for k in ["better with", "helps", "relieved by", "better when", "provides relief"]):
-                m = re.search(r"\b(better\s+(?:with|when)[^.,;\n]+|relieved\s+by[^.,;\n]+|provides?\s+relief[^.,;\n]*)", cleaned, flags=re.IGNORECASE)
+            elif any(k in lower for k in ["better with", "helps", "relieved by", "better when", "provides relief", "brings relief", "bring relief", "brings some relief", "some relief", "gives relief", "quiet room"]):
+                m = re.search(r"\b(better\s+(?:with|when)[^.,;\n]+|relieved\s+by[^.,;\n]+|(?:provides?|brings?|gives?)\s+(?:some\s+)?relief[^.,;\n]*|resting\s+in\s+a\s+quiet\s+room[^.,;\n]*)", cleaned, flags=re.IGNORECASE)
                 if m:
                     self.relieving_aggravating = m.group(0).strip()
                 else:
@@ -644,7 +712,11 @@ class ClinicalDialogueState:
                     self.relieving_aggravating = m_when.group(0).strip()
                     if is_latest:
                         self.turn_new_relieving_aggravating = True
-                elif prev_asked_relief and len(cleaned.split()) <= 15 and not any(k in lower for k in ["year", "month", "scale", "fever"]):
+                elif prev_asked_relief and len(cleaned.split()) <= 15 and not any(k in lower for k in [
+                    "year", "month", "scale", "fever", "medication", "medications", "meds",
+                    "allergic", "allergy", "allergies", "chronic", "diagnosed", "asthma", "diabetes",
+                    "hypertension", "blood pressure", "history", "conditions"
+                ]):
                     self.relieving_aggravating = cleaned
                     if is_latest:
                         self.turn_new_relieving_aggravating = True
@@ -661,7 +733,27 @@ class ClinicalDialogueState:
                         self.turn_new_relieving_aggravating = True
 
         # 8. Extract Medications
-        if is_medication_question(previous_ai_message):
+        is_answering_allergy = (
+            bool(re.search(r"\b(?:allergic\s+to|allergy\s+to|allergies|nkda|not\s+allergic)\b", lower))
+            or any(a in lower for a in ["penicillin", "latex", "sulfa", "peanuts", "pollen"])
+        )
+        is_answering_history = (
+            bool(re.search(r"\b(?:diagnosed\s+with|history\s+of|chronic\s+condition|i\s+have\s+(?:asthma|diabetes|hypertension|blood\s+pressure|gerd|acid\s+reflux|eczema|cholesterol))\b", lower))
+            or any(c in lower for c in ["asthma", "hypertension", "diabetes", "high blood pressure"])
+        )
+
+        has_med_info = (
+            any(k in lower for k in [
+                "ibuprofen", "advil", "tylenol", "paracetamol", "acetaminophen",
+                "aspirin", "albuterol", "inhaler", "cetirizine", "zyrtec",
+                "claritin", "lisinopril", "metformin", "omeprazole", "naproxen",
+                "amoxicillin", "antibiotic", "steroids", "multivitamin", "supplements",
+                "cough syrup", "cough drops", "lozenges", "medication", "medications", "meds", "pills", "tablets"
+            ])
+            or bool(re.search(r"\b(?:i\s+(?:take|am\s+taking|'m\s+taking|took|use)|taking|took|prescribed)\b", lower))
+        )
+
+        if is_medication_question(previous_ai_message) and (has_med_info or not (is_answering_allergy or is_answering_history)):
             if is_uncertain_response(lower):
                 self.medications = "Uncertain"
                 if is_latest:
@@ -723,16 +815,21 @@ class ClinicalDialogueState:
                             self.turn_new_meds = True
 
         # 9. Extract Allergies
-        if is_allergy_question(previous_ai_message):
-            # Check if patient actually reported medications instead of an allergy:
-            is_answering_med = (
-                bool(re.search(r"\b(?:i\s+(?:take|am\s+taking|'m\s+taking|took|use)|taking|took|prescribed)\s+", cleaned, re.IGNORECASE))
-                or any(d in lower for d in ["paracetamol", "ibuprofen", "aspirin", "tylenol", "advil", "metformin", "naproxen", "lisinopril", "albuterol"])
-            )
-            if is_answering_med:
-                # Do NOT treat as allergy!
-                pass
-            elif is_uncertain_response(lower):
+        is_answering_med = (
+            bool(re.search(r"\b(?:i\s+(?:take|am\s+taking|'m\s+taking|took|use)|taking|took|prescribed)\s+", cleaned, re.IGNORECASE))
+            or any(d in lower for d in ["paracetamol", "ibuprofen", "aspirin", "tylenol", "advil", "metformin", "naproxen", "lisinopril", "albuterol"])
+        )
+        is_answering_history = (
+            bool(re.search(r"\b(?:diagnosed\s+with|history\s+of|chronic\s+condition|i\s+have\s+(?:asthma|diabetes|hypertension|blood\s+pressure|gerd|acid\s+reflux|eczema|cholesterol))\b", lower))
+            or any(c in lower for c in ["asthma", "hypertension", "diabetes", "high blood pressure"])
+        )
+        has_allergy_info = (
+            bool(re.search(r"\b(?:allergic\s+to|allergy\s+to|allergies|nkda|not\s+allergic|no\s+allergies|known\s+allergies)\b", lower))
+            or any(a in lower for a in ["penicillin", "latex", "sulfa", "peanuts", "pollen"])
+        )
+
+        if is_allergy_question(previous_ai_message) and (has_allergy_info or not (is_answering_med or is_answering_history)):
+            if is_uncertain_response(lower):
                 self.allergies = "Uncertain"
                 if is_latest:
                     self.turn_new_allergies = True
@@ -751,7 +848,7 @@ class ClinicalDialogueState:
                 self.allergies = clean_allergy_input(cleaned)
                 if is_latest:
                     self.turn_new_allergies = True
-        elif not self.allergies:
+        elif not self.allergies or self.allergies in ("Uncertain", "No known drug allergies (NKDA)"):
             # Spontaneous allergy reporting outside direct allergy inquiry
             if re.search(r"\b(?:no\s+(?:known\s+)?(?:drug\s+|food\s+)?allergies|nkda|not\s+allergic(?:\s+to\s+anything)?|denies\s+allergies|have\s+no\s+(?:known\s+)?allergies|no\s+allergies)\b", lower):
                 self.allergies = "No known drug allergies (NKDA)"
@@ -776,14 +873,73 @@ class ClinicalDialogueState:
                             break
 
         # 10. Extract Past Medical History
-        if not self.past_medical_history:
-            if any(k in lower for k in ["no medical history", "no chronic conditions", "healthy", "no past illness"]):
+        is_answering_med = (
+            bool(re.search(r"\b(?:i\s+(?:take|am\s+taking|'m\s+taking|took|use)|taking|took|prescribed)\s+", cleaned, re.IGNORECASE))
+            or any(d in lower for d in ["paracetamol", "ibuprofen", "aspirin", "tylenol", "advil", "metformin", "naproxen", "lisinopril", "albuterol"])
+        )
+        is_answering_allergy = (
+            bool(re.search(r"\b(?:allergic\s+to|allergy\s+to|allergies|nkda|not\s+allergic)\b", lower))
+            or any(a in lower for a in ["penicillin", "latex", "sulfa", "peanuts", "pollen"])
+        )
+        has_history_info = (
+            bool(re.search(r"\b(?:diagnosed\s+with|history\s+of|chronic\s+condition|past\s+illness|pre-existing|no\s+chronic|no\s+medical\s+history)\b", lower))
+            or any(c in lower for c in ["asthma", "hypertension", "diabetes", "high blood pressure", "gerd", "acid reflux", "eczema", "cholesterol", "arthritis", "healthy"])
+        )
+
+        if is_history_question(previous_ai_message) and (has_history_info or not (is_answering_med or is_answering_allergy)):
+            if is_uncertain_response(lower):
+                self.past_medical_history = "Uncertain"
+                if is_latest:
+                    self.turn_new_history = True
+            elif (
+                is_pure_denial
+                or any(k in lower for k in [
+                    "no chronic conditions", "no medical history", "no past medical history",
+                    "none", "nothing", "healthy", "no known conditions", "none that i know of",
+                    "no past illness", "i don't have any", "don't have any", "never had any",
+                    "no pre-existing conditions", "no illnesses", "no health conditions"
+                ])
+            ):
                 self.past_medical_history = "No chronic conditions reported"
+                if is_latest:
+                    self.turn_new_history = True
             else:
-                conditions = ["asthma", "hypertension", "high blood pressure", "diabetes", "migraines?", "thyroid", "gerd", "acid reflux"]
-                found_cond = [c for c in conditions if re.search(rf"\b{c}\b", lower) and "family" not in lower and "mother" not in lower and "father" not in lower]
-                if found_cond:
-                    self.past_medical_history = ", ".join(dict.fromkeys(found_cond)).capitalize()
+                self.past_medical_history = clean_history_input(cleaned)
+                if is_latest:
+                    self.turn_new_history = True
+        elif not self.past_medical_history or self.past_medical_history in ("Uncertain", "No chronic conditions reported"):
+            # Spontaneous reporting outside direct history inquiry
+            if any(k in lower for k in [
+                "no medical history", "no chronic conditions", "healthy",
+                "no past illness", "no pre-existing conditions"
+            ]):
+                self.past_medical_history = "No chronic conditions reported"
+                if is_latest:
+                    self.turn_new_history = True
+            else:
+                diag_match = re.search(
+                    r"\b(?:diagnosed\s+with|history\s+of|i\s+have\s+(?:chronic\s+)?|suffer\s+from)\s+([^.,;\n]+)",
+                    cleaned,
+                    re.IGNORECASE
+                )
+                if diag_match and not any(k in lower for k in ["family", "mother", "father", "sister", "brother"]):
+                    self.past_medical_history = clean_history_input(diag_match.group(1))
+                    if is_latest:
+                        self.turn_new_history = True
+                else:
+                    conditions = [
+                        "asthma", "hypertension", "high blood pressure", "diabetes",
+                        "migraines?", "thyroid", "gerd", "acid reflux", "eczema",
+                        "cholesterol", "arthritis", "kidney stones?", "epilepsy", "depression"
+                    ]
+                    found_cond = [
+                        c for c in conditions
+                        if re.search(rf"\b{c}\b", lower) and "family" not in lower and "mother" not in lower and "father" not in lower
+                    ]
+                    if found_cond:
+                        self.past_medical_history = ", ".join(dict.fromkeys(found_cond)).capitalize()
+                        if is_latest:
+                            self.turn_new_history = True
 
         # 11. Extract Family History
         if not self.family_history:
@@ -913,8 +1069,8 @@ def generate_empathetic_acknowledgment(state: ClinicalDialogueState, latest_mess
         char_val = state.character.split(",")[-1].strip()
         return f"Understood, I've noted that it feels {char_val}."
 
-    # 6. Patient provided medications and/or allergies
-    if state.turn_new_meds or state.turn_new_allergies:
+    # 6. Patient provided medications, allergies, and/or medical history
+    if state.turn_new_meds or state.turn_new_allergies or state.turn_new_history:
         recorded = []
         if state.turn_new_meds and state.medications:
             if state.medications == "None reported":
@@ -930,6 +1086,13 @@ def generate_empathetic_acknowledgment(state: ClinicalDialogueState, latest_mess
                 recorded.append("your allergy status is uncertain")
             else:
                 recorded.append(f"your allergies ({state.allergies})")
+        if state.turn_new_history and state.past_medical_history:
+            if state.past_medical_history == "No chronic conditions reported":
+                recorded.append("you have no chronic conditions")
+            elif state.past_medical_history in ("Uncertain", "Unknown", "Not sure"):
+                recorded.append("your medical history status is uncertain")
+            else:
+                recorded.append(f"your medical history ({state.past_medical_history})")
         return f"Understood, I have recorded that {', and '.join(recorded)}."
 
     # 7. Relieving / aggravating factors
@@ -968,7 +1131,8 @@ def is_question_safe(
 
     # 1. Immediate previous message deduplication
     if previous_ai_message:
-        prev_lower = previous_ai_message.lower().strip()
+        prev_inquiry = get_last_question(previous_ai_message)
+        prev_lower = prev_inquiry.lower().strip()
         # Direct match or substring match
         if q_lower in prev_lower or prev_lower in q_lower:
             return False

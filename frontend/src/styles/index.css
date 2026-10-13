@@ -1,79 +1,79 @@
 /* =========================================================
-   DocuMedi Global Design System — Black Bean, Martini Olive & Cotton Candy Theme
+   DocuMedi Global Design System — Reversed Dark Theme
+   Black Bean (#3D2528), Martini Olive (#8A8B55) & Cotton Candy (#FFB7D5)
    Palette:
-     Black Bean primary dark brand:  #3D2528
-     Martini Olive secondary accent: #8A8B55
-     Cotton Candy primary accent:    #FFB7D5
-     Main background:                #FFF8F5
-     Card background:                #FFFFFF
-     Input background:               #FFFFFF
-     Primary text:                   #30272A
-     Secondary text:                 #74676B
-     Borders:                        #E8DCE0
-     Hover background:               #F7EAF0
-     Error:                          #B42332
-     Success:                        #287447
+     Black Bean primary background & dark surface: #3D2528
+     Elevated card / container background:        #4A2E32
+     Input background (inset dark):               #2E1B1D
+     Cotton Candy primary button & accent:        #FFB7D5
+     Martini Olive secondary accent:              #8A8B55
+     Primary text (crisp high contrast):          #FDF4F6
+     Secondary text:                              #D6C0C6
+     Borders:                                     #634046
+     Hover background:                            #56353A
+     Error:                                       #FF6B7D
+     Success:                                     #48C774
    ========================================================= */
 
 :root {
   --font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 
-  /* Theme Core Palette */
-  --color-brand-dark: #3D2528;      /* Black Bean — Primary dark brand color */
+  /* Theme Core Palette - Reversed Dark Theme */
+  --color-brand-dark: #FFB7D5;      /* Cotton Candy brand highlight in dark mode */
   --color-secondary: #8A8B55;       /* Martini Olive — Secondary accent */
-  --color-secondary-hover: #757647; /* Deeper Martini Olive */
-  --color-secondary-active: #62633B;
-  --color-secondary-light: rgba(138, 139, 85, 0.14);
-  --color-secondary-ultralight: rgba(138, 139, 85, 0.07);
+  --color-secondary-hover: #9FA066; /* Lighter Martini Olive */
+  --color-secondary-active: #B4B578;
+  --color-secondary-light: rgba(138, 139, 85, 0.22);
+  --color-secondary-ultralight: rgba(138, 139, 85, 0.12);
 
-  --color-primary: #FFB7D5;         /* Cotton Candy — Soft pink accent */
+  --color-primary: #FFB7D5;         /* Cotton Candy — Soft pink accent for primary buttons & highlights */
   --color-primary-hover: #FFA2C7;   /* Deeper pink on hover */
   --color-primary-active: #F28DB6;
-  --color-primary-text: #3D2528;    /* Dark Black Bean text on Cotton Candy for high contrast */
-  --color-primary-light: rgba(255, 183, 213, 0.28);
+  --color-primary-text: #3D2528;    /* Dark Black Bean text on Cotton Candy for high contrast (WCAG AAA) */
+  --color-primary-light: rgba(255, 183, 213, 0.22);
   --color-primary-ultralight: rgba(255, 183, 213, 0.12);
 
-  --color-bg-app: #FFF8F5;          /* Main background */
-  --color-bg-card: #FFFFFF;         /* Card background */
-  --color-bg-panel: #FFFFFF;        /* Panel background */
-  --color-bg-input: #FFFFFF;        /* Input background */
-  --color-bg-hover: #F7EAF0;        /* Hover background */
+  --color-bg-app: #3D2528;          /* Primary page background: Black Bean */
+  --color-bg-card: #4A2E32;         /* Elevated dark surface for cards and containers */
+  --color-bg-panel: #4A2E32;        /* Panel background */
+  --color-bg-input: #2E1B1D;        /* Input background (inset dark) */
+  --color-bg-hover: #56353A;        /* Hover background */
 
-  --color-border: #E8DCE0;          /* Borders */
-  --color-border-light: #F2E9EC;    /* Subtle interior dividers */
-  --color-border-hover: #D8C6CC;    /* Border hover */
+  --color-border: #634046;          /* Visible, elegant dark theme borders */
+  --color-border-light: #523439;    /* Subtle interior dividers */
+  --color-border-hover: #7F535B;    /* Border hover */
   --color-border-focus: #8A8B55;    /* Focus border ring (Martini Olive) */
 
-  --color-text-primary: #30272A;    /* Primary text */
-  --color-text-secondary: #74676B;  /* Secondary text */
-  --color-text-muted: #8E8185;      /* Muted sub-text */
+  --color-text-primary: #FDF4F6;    /* Primary text: crisp high-contrast off-white/rose */
+  --color-text-secondary: #D6C0C6;  /* Secondary text: readable muted rose */
+  --color-text-muted: #AA939A;      /* Muted sub-text */
 
-  --color-danger: #B42332;          /* Error red */
-  --color-danger-bg: rgba(180, 35, 50, 0.08);
-  --color-danger-border: #F3C3C8;
+  --color-danger: #FF6B7D;          /* Error red adapted for dark mode */
+  --color-danger-bg: rgba(255, 107, 125, 0.15);
+  --color-danger-border: #7A2833;
 
-  --color-success: #287447;         /* Success green */
-  --color-success-bg: rgba(40, 116, 71, 0.1);
-  --color-success-border: #BCE0CB;
+  --color-success: #48C774;         /* Success green */
+  --color-success-bg: rgba(72, 199, 116, 0.15);
+  --color-success-border: #28663E;
 
-  --color-info: #8A8B55;            /* Martini Olive info */
-  --color-info-bg: rgba(138, 139, 85, 0.1);
-  --color-info-border: #D1D2AD;
+  --color-info: #9FA066;            /* Martini Olive info */
+  --color-info-bg: rgba(138, 139, 85, 0.2);
+  --color-info-border: #696A3F;
 
   /* Semantic compatibility variables */
-  --color-dark: #3D2528;            /* Headings / Black Bean */
-  --color-dark-muted: #74676B;      /* Muted descriptions */
-  --color-slate-600: #74676B;       /* Secondary descriptions */
-  --color-slate-400: #8E8185;       /* Sub-muted icons and fine text */
+  --color-dark: #FDF4F6;            /* Headings / High contrast text */
+  --color-dark-muted: #D6C0C6;      /* Muted descriptions */
+  --color-slate-600: #D6C0C6;       /* Secondary descriptions */
+  --color-slate-400: #AA939A;       /* Sub-muted icons and fine text */
   --color-accent-green: #8A8B55;    /* Martini Olive */
-  --color-accent-green-bg: rgba(138, 139, 85, 0.12);
+  --color-accent-green-bg: rgba(138, 139, 85, 0.2);
   --color-accent-olive: #8A8B55;
 
-  /* Soft shadows */
-  --shadow-sm: 0 1px 3px rgba(61, 37, 40, 0.05);
-  --shadow-md: 0 4px 12px rgba(61, 37, 40, 0.07);
-  --shadow-lg: 0 10px 24px rgba(61, 37, 40, 0.09);
-  --shadow-card: 0 8px 24px rgba(61, 37, 40, 0.06), 0 2px 6px rgba(61, 37, 40, 0.03);
+  /* Soft dark mode shadows */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 10px 24px rgba(0, 0, 0, 0.45);
+  --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.3), 0 2px 6px rgba(0, 0, 0, 0.2);
 
   --radius-sm: 6px;
   --radius-md: 10px;
@@ -116,14 +116,14 @@ body {
 }
 
 a {
-  color: var(--color-secondary);
+  color: var(--color-primary);
   text-decoration: none;
   font-weight: 500;
   transition: color 0.15s ease;
 }
 
 a:hover {
-  color: var(--color-secondary-hover);
+  color: var(--color-primary-hover);
 }
 
 /* -------------------------------------------------------------
@@ -185,13 +185,13 @@ a:hover {
 .brand-title {
   font-size: 1.25rem;
   font-weight: 800;
-  color: var(--color-brand-dark);
+  color: var(--color-text-primary);
   letter-spacing: -0.025em;
   line-height: 1.15;
 }
 
 .brand-title span {
-  color: var(--color-secondary);
+  color: var(--color-primary);
 }
 
 .brand-tagline {
@@ -222,9 +222,10 @@ a:hover {
 }
 
 .nav-link.active {
-  color: #FFFFFF;
-  background-color: var(--color-brand-dark);
-  box-shadow: 0 2px 5px rgba(61, 37, 40, 0.2);
+  color: var(--color-primary-text);
+  background-color: var(--color-primary);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  font-weight: 700;
 }
 
 .nav-actions {
@@ -238,12 +239,12 @@ a:hover {
   align-items: center;
   gap: 0.5rem;
   padding: 0.35rem 0.75rem;
-  background-color: var(--color-secondary-light);
+  background-color: var(--color-bg-hover);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-full);
   font-size: 0.85rem;
   font-weight: 600;
-  color: var(--color-secondary);
+  color: var(--color-text-primary);
 }
 
 .patient-avatar {
@@ -321,13 +322,13 @@ a:hover {
 
 .btn-outline {
   background-color: transparent;
-  color: var(--color-secondary);
-  border-color: var(--color-secondary);
+  color: var(--color-primary);
+  border-color: var(--color-primary);
 }
 
 .btn-outline:hover:not(:disabled) {
-  background-color: var(--color-secondary-light);
-  color: var(--color-secondary-hover);
+  background-color: var(--color-primary-light);
+  color: var(--color-primary-hover);
 }
 
 .btn-danger-outline {
@@ -396,13 +397,14 @@ a:hover {
 }
 
 .form-input::placeholder {
-  color: #A3969A;
+  color: var(--color-text-muted);
 }
 
 .form-input:focus {
   outline: none;
+  background-color: var(--color-bg-input);
   border-color: var(--color-secondary);
-  box-shadow: 0 0 0 3px rgba(138, 139, 85, 0.22);
+  box-shadow: 0 0 0 3px rgba(138, 139, 85, 0.3);
 }
 
 .form-input.input-error {
@@ -507,7 +509,7 @@ a:hover {
 .dashboard-hero {
   background: var(--color-bg-card);
   border: 1px solid var(--color-border);
-  border-top: 3.5px solid var(--color-brand-dark);
+  border-top: 3.5px solid var(--color-primary);
   border-radius: var(--radius-xl);
   padding: 2.25rem;
   color: var(--color-text-primary);
@@ -544,7 +546,7 @@ a:hover {
   color: var(--color-primary-text);
   font-weight: 700;
   border-color: var(--color-primary);
-  box-shadow: 0 4px 10px rgba(61, 37, 40, 0.12);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
 }
 
 .btn-white:hover {
@@ -593,7 +595,7 @@ a:hover {
 
 .stat-icon.green {
   background-color: var(--color-primary-light);
-  color: var(--color-brand-dark);
+  color: var(--color-primary);
 }
 
 .stat-icon.blue {
@@ -918,16 +920,16 @@ a:hover {
   color: var(--color-text-primary);
   border: 1px solid var(--color-border);
   border-top-left-radius: 4px;
-  box-shadow: 0 1px 4px rgba(61, 37, 40, 0.05);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
 }
 
 .message-row.patient .message-bubble {
-  background-color: #FFFFFF;
+  background-color: #56353A;
   color: var(--color-text-primary);
   border: 1px solid var(--color-border);
   border-top-right-radius: 4px;
   border-right: 3.5px solid var(--color-primary);
-  box-shadow: 0 1px 4px rgba(61, 37, 40, 0.05);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
 }
 
 .message-row.system .message-bubble {
@@ -1111,15 +1113,15 @@ a:hover {
   gap: 0.5rem;
   font-size: 0.95rem;
   font-weight: 700;
-  color: var(--color-secondary);
+  color: var(--color-primary);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-bottom: 0.5rem;
 }
 
 .document-section-number {
-  background-color: var(--color-secondary-light);
-  color: var(--color-secondary);
+  background-color: var(--color-primary-light);
+  color: var(--color-primary);
   width: 22px;
   height: 22px;
   border-radius: 50%;
@@ -1160,7 +1162,7 @@ a:hover {
   outline: none;
   background-color: var(--color-bg-input);
   border-color: var(--color-secondary);
-  box-shadow: 0 0 0 3px rgba(138, 139, 85, 0.22);
+  box-shadow: 0 0 0 3px rgba(138, 139, 85, 0.3);
 }
 
 .document-textarea:disabled {
@@ -1174,7 +1176,7 @@ a:hover {
   position: sticky;
   top: 70px;
   z-index: 40;
-  background-color: rgba(255, 248, 245, 0.96);
+  background-color: rgba(61, 37, 40, 0.94);
   backdrop-filter: blur(8px);
   padding: 0.85rem 0;
   margin-bottom: 1.5rem;
@@ -1282,7 +1284,7 @@ a:hover {
 .timeline-complaint {
   font-size: 0.95rem;
   font-weight: 700;
-  color: var(--color-brand-dark);
+  color: var(--color-primary);
   margin-bottom: 0.5rem;
 }
 

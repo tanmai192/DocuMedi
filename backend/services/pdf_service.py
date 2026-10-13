@@ -118,7 +118,7 @@ def clean_text_for_pdf(text: Optional[str]) -> str:
         return "Not provided."
 
     cleaned = text.strip()
-    if cleaned in ("Not provided", "Not provided.", "Not Provided", "none", "None"):
+    if cleaned in ("Not provided", "Not provided.", "Not Provided"):
         return "Not provided."
 
     escaped = html.escape(cleaned)
