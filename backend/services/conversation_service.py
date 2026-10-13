@@ -3,10 +3,11 @@ conversation_service.py — Conversational AI and Clinical Case-Taking Service f
 
 Handles:
 1. Initial clinical intake greeting.
-2. Dynamic conversation progression (Gemini / OpenAI REST API via httpx).
-3. Red flag emergency symptom detection and urgent care notices.
-4. Robust fallback clinical intake rules engine when API key is unconfigured or unavailable.
-5. Server-side medical guardrails (no diagnosis, no prescription).
+2. Empathetic, dynamic conversation progression (Gemini / OpenAI REST API via httpx).
+3. Cumulative clinical state tracking so patients never have to repeat information.
+4. Red flag emergency symptom detection and urgent care notices.
+5. Adaptive clinical intake rules engine when API key is unconfigured or unavailable.
+6. Server-side medical guardrails (no diagnosis, no prescription).
 """
 
 import os
@@ -14,6 +15,13 @@ import re
 from typing import List, Dict, Tuple, Optional
 import httpx
 from dotenv import load_dotenv
+
+from services.clinical_tracker import (
+    build_clinical_state_from_history,
+    generate_empathetic_acknowledgment,
+    generate_adaptive_follow_up_questions,
+    ClinicalDialogueState
+)
 
 load_dotenv()
 
@@ -24,30 +32,42 @@ INITIAL_GREETING = (
 
 SYSTEM_PROMPT = """
 You are the DocuMedi Clinical Case-Taking Assistant.
-DocuMedi is a patient-facing documentation tool for personal medical record-keeping.
+DocuMedi is an intelligent, compassionate patient intake documentation assistant for personal medical record-keeping.
 
 YOUR MISSION:
-Help the patient articulate and organize their health story so it can be structured into an accurate patient note.
+Conduct a warm, natural, empathetic, and human-like clinical intake conversation. Help the patient articulate their health story while making them feel genuinely heard, respected, and understood.
 
-CRITICAL CLINICAL & SAFETY RULES:
-1. Ask ONE clear question at a time. Never ask multiple questions in a single response.
-2. Use a calm, empathetic, and professional tone.
-3. Systematically gather information covering:
-   - Chief complaint (primary symptom or reason for visit)
-   - History of present illness (onset, duration, severity on a 1-10 scale, description)
-   - Associated symptoms
-   - Past medical history and chronic conditions
-   - Current medications and supplements
-   - Known allergies (especially medications)
-   - Relevant family and social history
-4. Never force the patient to answer. If they skip or say "I don't know", move forward politely.
-5. If the patient states they feel fine or have no symptoms, respond warmly and let them know they can finish the consultation.
-6. When sufficient clinical context has been shared, summarize the key points neutrally and advise the patient that they can click "End Consultation" to proceed to their structured note review.
-7. ABSOLUTE MEDICAL SAFETY RESTRICTIONS:
-   - You are NOT a doctor. DO NOT provide a medical diagnosis or guess what disease they have.
-   - NEVER prescribe medication, recommend pharmaceuticals, or advise changing any prescribed dosage.
-   - For severe emergency symptoms (crushing chest pain, severe shortness of breath, sudden facial drooping or weakness, massive bleeding), instruct them IMMEDIATELY to call 911 (or local emergency services) and seek emergency medical care without delay.
+CORE CLINICAL & CONVERSATIONAL PRINCIPLES:
+1. EMPATHY & ACTIVE LISTENING:
+   - Always warmly acknowledge each patient message and validate their distress or discomfort.
+   - Avoid rigid, robotic, or overly scripted replies. Speak with the warmth, attentiveness, and calm reassurance of an experienced healthcare professional.
+
+2. CUMULATIVE MEMORY & SYMPTOM CONNECTION:
+   - Remember ALL symptoms, answers, medications, and details the patient has mentioned throughout the consultation.
+   - When a patient introduces a new symptom midway through (even while discussing another topic), immediately recognize it, validate it, and connect it with their prior symptoms (e.g., "I'm so sorry you're feeling nauseous on top of the headache you mentioned").
+
+3. ADAPTIVE FOLLOW-UP INQUIRIES:
+   - Ask only ONE or TWO relevant follow-up questions at a time.
+   - NEVER make the patient repeat information they have already provided (such as duration, severity, medications, or allergies).
+   - Tailor your next inquiry dynamically to what is still missing from the clinical picture (onset, duration, severity on 1-10 scale, character, relieving/aggravating factors, medications, allergies, medical history).
+
+4. PATIENT AUTONOMY:
+   - Allow patients to describe multiple symptoms together or change topics naturally.
+   - Never interrogate or force an answer. If they are unsure or skip a question, move forward gently.
+
+5. CONCLUDING THE CONSULTATION:
+   - When key clinical details have been gathered, summarize the picture neutrally and kindly invite them to click "Finish Consultation" to review their structured 11-section note, or share any remaining details.
+
+6. ABSOLUTE MEDICAL SAFETY RESTRICTIONS:
+   - You are an intake documentation assistant, NOT a physician. NEVER diagnose medical conditions or speculate on a specific disease.
+   - NEVER prescribe medications, recommend treatments, or suggest dosage changes.
+   - For severe red flag emergencies (crushing chest pain, severe shortness of breath, sudden facial drooping or weakness, massive bleeding), instruct the patient IMMEDIATELY to call 112 (or 108 for ambulance services in India) or visit the nearest emergency department without delay.
 """
+
+# Configurable emergency guidance (Defaults to India: 112 primary, 108 ambulance)
+EMERGENCY_COUNTRY = os.getenv("EMERGENCY_COUNTRY", "India").strip()
+PRIMARY_EMERGENCY_NUMBER = os.getenv("PRIMARY_EMERGENCY_NUMBER", "112").strip()
+AMBULANCE_EMERGENCY_NUMBER = os.getenv("AMBULANCE_EMERGENCY_NUMBER", "108").strip()
 
 # Red flag patterns for immediate medical attention
 EMERGENCY_PATTERNS = [
@@ -64,9 +84,10 @@ EMERGENCY_PATTERNS = [
 ]
 
 EMERGENCY_WARNING = (
-    "\n\n⚠️ **URGENT MEDICAL NOTICE:** Based on the symptoms you reported, this may be a medical emergency. "
-    "Please call 911 (or your local emergency number) or go to the nearest emergency room immediately. "
-    "Do not wait for online documentation."
+    f"\n\n⚠️ **URGENT MEDICAL NOTICE:** Based on the symptoms you reported, this may be a medical emergency. "
+    f"If you are experiencing a life-threatening emergency in {EMERGENCY_COUNTRY}, call {PRIMARY_EMERGENCY_NUMBER} immediately "
+    f"(or {AMBULANCE_EMERGENCY_NUMBER} for ambulance services) or visit the nearest emergency department without delay. "
+    f"Do not wait for online documentation."
 )
 
 
@@ -94,8 +115,9 @@ def get_ai_config() -> Tuple[str, Optional[str], str]:
 
 def generate_rules_fallback_response(history: List[Dict[str, str]], patient_message: str) -> str:
     """
-    Deterministic clinical intake progression used when live AI API is unconfigured or unavailable.
-    Ensures students and evaluators can always complete a full case-taking flow.
+    Active listening, empathetic clinical intake engine used when live AI API is unconfigured or unavailable.
+    Remembers previously reported symptoms, acknowledges new symptoms introduced midway,
+    adapts follow-up questions dynamically, mirrors patient answers, and never repeats answered questions.
     """
     msg_lower = patient_message.lower().strip()
 
@@ -103,36 +125,76 @@ def generate_rules_fallback_response(history: List[Dict[str, str]], patient_mess
     if any(phrase in msg_lower for phrase in ["no concern", "feel fine", "doing well", "feeling great", "nothing wrong", "no symptoms", "all good"]):
         return (
             "I'm glad to hear that you are feeling well today! Since you do not have any active health concerns to record, "
-            "you can click 'End Consultation' at any time to finish, or let me know if you would like to document a routine checkup."
+            "you can click 'Finish Consultation' at any time to conclude, or let me know if you would like to document a routine checkup."
         )
 
-    # Count how many patient messages were in history before this one
-    previous_patient_turns = sum(1 for m in history if m.get("sender_role") == "patient")
+    # Find the most recent AI message from history
+    last_ai_msg = None
+    for msg in reversed(history):
+        if msg.get("sender_role") == "ai":
+            last_ai_msg = msg.get("message_content", "").strip()
+            break
 
-    # Structured clinical question progression
-    intake_steps = [
-        # Turn 1 (0 previous): Duration & Onset
-        "Thank you for sharing that. Approximately how long have you been experiencing this, and did it start suddenly or gradually?",
-        # Turn 2 (1 previous): Severity & Character
-        "On a scale of 1 to 10 (with 1 being very mild and 10 being the most severe), how would you rate the intensity, and could you describe what it feels like?",
-        # Turn 3 (2 previous): Associated symptoms
-        "Are you noticing any other symptoms alongside this, such as fever, fatigue, headaches, or nausea?",
-        # Turn 4 (3 previous): Past medical history
-        "Do you have any existing chronic conditions or past medical diagnoses (such as hypertension, asthma, diabetes)?",
-        # Turn 5 (4 previous): Medications
-        "Are you currently taking any prescription medications, over-the-counter drugs, or dietary supplements?",
-        # Turn 6 (5 previous): Allergies
-        "Do you have any known allergies to medications, foods, or environmental factors?",
-        # Turn 7 (6 previous): Family History
-        "Is there any relevant medical history in your immediate family related to these concerns?",
-        # Turn 8 (7+ previous): Wrap-up & Summary
-        "Thank you for providing this detailed health information. I have documented your chief concern, symptoms, medications, and medical background. "
-        "Whenever you are ready, please click 'Finish Consultation' to proceed to your structured 11-section patient note."
-    ]
+    # 2. Build cumulative clinical dialogue state across all history + current message
+    state = build_clinical_state_from_history(history, patient_message)
 
-    step_index = min(previous_patient_turns, len(intake_steps) - 1)
-    return intake_steps[step_index]
+    # 3. Active listening reflection reflecting patient's latest message and connecting symptoms
+    ack = generate_empathetic_acknowledgment(state, patient_message)
 
+    # 4. Adaptive follow-up question strictly tailored to remaining clinical unknowns
+    question = generate_adaptive_follow_up_questions(state, last_ai_msg)
+
+    response = f"{ack} {question}".strip()
+
+    # 5. HARD REPETITION GUARD:
+    # Under NO circumstances may the AI response be identical to the previous AI message!
+    if last_ai_msg and (response.lower() == last_ai_msg.lower() or question.lower() in last_ai_msg.lower()):
+        alt_question = None
+        if not state.medications:
+            alt_question = "Are you currently taking any prescription medications, over-the-counter remedies, or supplements for this or other health conditions?"
+        elif not state.allergies:
+            alt_question = "Do you have any known allergies, especially to medications or foods?"
+        elif not state.past_medical_history:
+            alt_question = "Do you have any personal medical history, chronic conditions, or family history related to these concerns?"
+        else:
+            alt_question = "Is there anything else you would like to include before we finalize your consultation note?"
+
+        if any(w in msg_lower for w in ["no", "nope", "nah", "none"]):
+            ack = "Understood, thank you for confirming that."
+
+        response = f"{ack} {alt_question}".strip()
+
+    return response
+
+
+def format_clinical_state_context(state: ClinicalDialogueState) -> str:
+    """Formats cumulative clinical memory and strict non-repetition rules for LLMs."""
+    return f"""
+CURRENT CUMULATIVE PATIENT STATE:
+- Active Reported Symptoms: {', '.join(state.symptoms) if state.symptoms else 'None identified yet'}
+- Newly Introduced in Latest Message: {', '.join(state.new_symptoms_in_turn) if state.new_symptoms_in_turn else 'None'}
+- Denied/Negative Symptoms: {', '.join(state.negative_symptoms) if state.negative_symptoms else 'None'}
+- Confirmed Clinical Details Already Provided by Patient:
+  * Onset / Duration: {state.onset_duration or 'NOT ANSWERED'}
+  * Severity / Pain Level: {state.severity or 'NOT ANSWERED'}
+  * Character / Quality: {state.character or 'NOT ANSWERED'}
+  * Anatomical Location: {state.location or 'NOT ANSWERED'}
+  * Relieving / Aggravating Factors: {state.relieving_aggravating or 'NOT ANSWERED'}
+  * Current Medications: {state.medications or 'NOT ANSWERED'}
+  * Allergies: {state.allergies or 'NOT ANSWERED'}
+  * Medical / Family History: {state.past_medical_history or state.family_history or 'NOT ANSWERED'}
+
+STRICT DIALOGUE RULES FOR YOUR RESPONSE:
+1. ACTIVE LISTENING: Briefly acknowledge or reflect what the patient JUST stated in their latest message.
+2. NEVER RE-ASK ANY CONFIRMED DETAILS:
+   - If Onset/Duration is confirmed ({state.onset_duration}), NEVER ask when it started or how long it has lasted.
+   - If Severity is confirmed ({state.severity}), NEVER ask for a 1-10 rating, severity, or discomfort level.
+   - If Character is confirmed ({state.character}), NEVER ask what it feels like or if it's dry/mucus.
+   - If Medications are confirmed ({state.medications}), NEVER ask if they take medications.
+   - If Allergies are confirmed ({state.allergies}), NEVER ask about allergies.
+3. NEW SYMPTOMS: If a new symptom was mentioned, warmly acknowledge it and explore how it connects to earlier symptoms.
+4. Ask ONLY ONE relevant next question focusing strictly on what is still marked 'NOT ANSWERED' above.
+"""
 
 
 async def generate_gemini_response(
@@ -141,11 +203,14 @@ async def generate_gemini_response(
     history: List[Dict[str, str]],
     patient_message: str
 ) -> str:
-    """Call Google Gemini REST API via httpx."""
+    """Call Google Gemini REST API via httpx with cumulative clinical memory."""
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
 
+    state = build_clinical_state_from_history(history, patient_message)
+    state_context = format_clinical_state_context(state)
+
     # Build conversation transcript for context
-    transcript = SYSTEM_PROMPT + "\n\nCONVERSATION HISTORY:\n"
+    transcript = SYSTEM_PROMPT + "\n\n" + state_context + "\n\nCONVERSATION HISTORY:\n"
     for msg in history:
         role = "Patient" if msg["sender_role"] == "patient" else "DocuMedi AI"
         transcript += f"{role}: {msg['message_content']}\n"
@@ -182,10 +247,13 @@ async def generate_openai_response(
     history: List[Dict[str, str]],
     patient_message: str
 ) -> str:
-    """Call OpenAI REST API via httpx."""
+    """Call OpenAI REST API via httpx with cumulative clinical memory."""
     url = "https://api.openai.com/v1/chat/completions"
 
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    state = build_clinical_state_from_history(history, patient_message)
+    state_context = format_clinical_state_context(state)
+
+    messages = [{"role": "system", "content": SYSTEM_PROMPT + "\n\n" + state_context}]
     for msg in history:
         role = "user" if msg["sender_role"] == "patient" else "assistant"
         messages.append({"role": role, "content": msg["message_content"]})
@@ -241,7 +309,7 @@ async def process_patient_message(
         except Exception as e:
             system_notice = f"AI Provider connection issue: {str(e)[:120]}. Reverted safely to Clinical Intake Engine."
 
-    # If live AI is unconfigured or failed, use rule-based clinical progression
+    # If live AI is unconfigured or failed, use empathetic clinical intake engine
     if not ai_text:
         ai_text = generate_rules_fallback_response(history, patient_message)
         is_live = False

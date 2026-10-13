@@ -16,6 +16,7 @@ Converts conversation dialogue into a structured 11-section patient note:
 
 Adheres strictly to medical safety:
 - Never invents patient symptoms, dates, medications, or findings.
+- Retains all cumulative symptoms and details reported across the entire dialogue.
 - Physical examination is always set to:
   'Not performed — information not collected during the patient conversation'
 - Assessment & Plan neutrally summarizes concerns and advises professional evaluation.
@@ -27,6 +28,7 @@ import re
 from typing import List, Dict, Tuple, Optional
 import httpx
 from services.conversation_service import get_ai_config
+from services.clinical_tracker import build_clinical_state_from_history, ClinicalDialogueState
 
 NOTE_SYSTEM_PROMPT = """
 You are the DocuMedi Clinical Documentation Engine.
@@ -63,62 +65,104 @@ Return ONLY JSON without markdown fences.
 
 def extract_fallback_note(history: List[Dict[str, str]]) -> Dict[str, str]:
     """
-    Deterministic clinical intake parser for when live AI is unavailable or unconfigured.
-    Synthesizes the conversation history into all 11 standard sections.
+    Synthesizes the entire consultation history into a structured 11-section patient note
+    using cumulative ClinicalDialogueState tracking.
+    
+    Guarantees:
+    - Never invents patient symptoms, dates, medications, or findings.
+    - Preserves all cumulative symptoms and details reported throughout the consultation.
+    - Sets missing sections explicitly to 'Not provided'.
+    - Physical Examination is strictly set to:
+      'Not performed — information not collected during the patient conversation'
+    - Assessment and Plan neutrally summarizes concerns without diagnosing or prescribing.
     """
+    state = build_clinical_state_from_history(history, "")
+
     patient_messages = [
         m["message_content"].strip()
         for m in history
         if m.get("sender_role") == "patient" and m.get("message_content")
     ]
 
-    if not patient_messages:
+    if not patient_messages and not state.symptoms:
         chief_complaint = "Patient reported no specific symptoms during consultation"
-        hpi = "No symptoms or history described by patient."
+        hpi = "No symptoms or clinical history reported by patient during consultation."
     else:
-        chief_complaint = patient_messages[0]
-        # Build HPI from patient responses
-        hpi_parts = []
-        for i, msg in enumerate(patient_messages):
-            if i == 0:
-                hpi_parts.append(f"Patient presents with: {msg}.")
-            elif i == 1:
-                hpi_parts.append(f"Onset & Duration: {msg}.")
-            elif i == 2:
-                hpi_parts.append(f"Severity & Character: {msg}.")
-            elif i == 3:
-                hpi_parts.append(f"Associated symptoms reported: {msg}.")
+        # 1. Chief Complaint: Reflects all reported symptoms
+        if state.symptoms:
+            sym_list = list(state.symptoms)
+            if len(sym_list) == 1:
+                cc = f"{sym_list[0].capitalize()}"
+            elif len(sym_list) == 2:
+                cc = f"{sym_list[0].capitalize()} and {sym_list[1]}"
             else:
-                hpi_parts.append(f"Additional details reported: {msg}.")
+                cc = f"{', '.join(sym_list[:-1]).capitalize()}, and {sym_list[-1]}"
+            if state.location and state.location.lower() not in cc.lower():
+                cc += f" ({state.location})"
+            chief_complaint = cc
+        else:
+            chief_complaint = patient_messages[0]
+
+        # 2. HPI Narrative: Comprehensive synthesis of dialogue
+        hpi_parts = []
+        pres_items = []
+        if state.symptoms:
+            pres_items.append(f"Patient reports {', '.join(state.symptoms)}")
+        else:
+            pres_items.append(f"Patient presents with: {patient_messages[0]}")
+        
+        if state.location:
+            pres_items.append(f"in the {state.location}")
+        if state.onset_duration:
+            pres_items.append(f"persisting for {state.onset_duration}")
+        if state.character:
+            pres_items.append(f"described as {state.character}")
+        if state.severity:
+            pres_items.append(f"rated at {state.severity}")
+
+        hpi_parts.append(" ".join(pres_items) + ".")
+
+        if state.relieving_aggravating:
+            hpi_parts.append(f"Symptoms are {state.relieving_aggravating}.")
+
+        if state.medications and state.medications != "None reported":
+            hpi_parts.append(f"Current medication or treatment used: {state.medications}.")
+        elif state.medications == "None reported":
+            hpi_parts.append("Patient denies taking medications for these symptoms.")
+
+        if state.negative_symptoms:
+            hpi_parts.append(f"Patient explicitly denies {', '.join(state.negative_symptoms)}.")
+
+        # Additional patient context
+        if len(patient_messages) > 1:
+            hpi_parts.append(f"Clinical details gathered across {len(patient_messages)} consultation turns.")
+
         hpi = " ".join(hpi_parts)
 
-    # Check for keywords in patient dialogue for background sections
-    full_text = " ".join(patient_messages).lower()
+    pmh = state.past_medical_history if state.past_medical_history else "Not provided"
+    meds = state.medications if state.medications else "Not provided"
+    allergies = state.allergies if state.allergies else "Not provided"
+    fam = state.family_history if state.family_history else "Not provided"
+    social = state.social_history if state.social_history else "Not provided"
 
-    # Chronic conditions / medical history
-    pmh = "Not provided"
-    if any(k in full_text for k in ["asthma", "hypertension", "blood pressure", "diabetes", "migraine", "thyroid"]):
-        pmh = "Patient mentioned chronic health background during intake."
+    ros_items = []
+    if state.symptoms:
+        ros_items.append(f"Positive for: {', '.join(state.symptoms)}")
+    if state.negative_symptoms:
+        ros_items.append(f"Negative for: {', '.join(state.negative_symptoms)}")
+    ros = ". ".join(ros_items) + "." if ros_items else "Review of systems documented based on consultation dialogue."
 
-    # Medications
-    meds = "Not provided"
-    if any(k in full_text for k in ["taking", "medication", "pill", "tablet", "inhaler", "mg", "dose"]):
-        meds = "Patient mentioned taking current medication/supplements during intake."
+    pe = "Not performed — information not collected during the patient conversation"
 
-    # Allergies
-    allergies = "Not provided"
-    if any(k in full_text for k in ["allergic", "allergy", "penicillin", "latex", "peanuts"]):
-        allergies = "Patient reported allergy concerns during intake."
-
-    assessment_summary = (
+    assessment = (
         f"Patient reports {chief_complaint.lower().rstrip('.')}. "
-        "Clinical assessment and treatment planning require evaluation by a qualified medical professional. "
-        "DocuMedi does not provide definitive medical diagnoses or prescribe medications."
+        "Clinical assessment and treatment planning require in-person evaluation by a qualified medical professional. "
+        "DocuMedi provides clinical intake documentation and does not render definitive medical diagnoses or prescribe medications."
     )
 
-    follow_up_recommendation = (
+    follow_up = (
         "Consult a qualified healthcare provider or primary care physician for clinical evaluation. "
-        "If red flag symptoms develop or existing symptoms worsen significantly, seek emergency medical care."
+        "If red flag symptoms develop or existing symptoms worsen significantly, seek emergency medical care immediately."
     )
 
     return {
@@ -127,12 +171,12 @@ def extract_fallback_note(history: List[Dict[str, str]]) -> Dict[str, str]:
         "past_medical_history": pmh,
         "medications": meds,
         "allergies": allergies,
-        "family_history": "Not provided",
-        "social_history": "Not provided",
-        "review_of_systems": "Review completed based on patient-reported symptoms.",
-        "physical_examination": "Not performed — information not collected during the patient conversation",
-        "assessment_and_plan": assessment_summary,
-        "follow_up": follow_up_recommendation
+        "family_history": fam,
+        "social_history": social,
+        "review_of_systems": ros,
+        "physical_examination": pe,
+        "assessment_and_plan": assessment,
+        "follow_up": follow_up
     }
 
 
@@ -236,7 +280,7 @@ async def generate_note_from_dialogue(
         except Exception as e:
             system_notice = f"Live AI generation failed ({str(e)[:80]}). Safely structured note using Clinical Intake Engine."
 
-    # Fallback to deterministic clinical parser if no API key or if provider call failed
+    # Fallback to cumulative clinical parser if no API key or if provider call failed
     if not note_data:
         note_data = extract_fallback_note(history)
         is_live = False

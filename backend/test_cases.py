@@ -143,8 +143,8 @@ def run_stage5_tests():
         assert res_emergency.status_code == 200
         ai_resp_emergency = res_emergency.json()["ai_response"]["message_content"]
         assert "URGENT MEDICAL NOTICE" in ai_resp_emergency
-        assert "911" in ai_resp_emergency
-        print("  [PASS] Emergency red flags triggered urgent care / 911 warning.")
+        assert "112" in ai_resp_emergency
+        print("  [PASS] Emergency red flags triggered urgent care / 112 warning.")
 
         # Step 8: End the consultation
         print("\n[8/9] Ending the active consultation...")

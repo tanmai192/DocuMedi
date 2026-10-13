@@ -118,7 +118,7 @@ export default function App() {
             <p>
               <strong>Medical Disclaimer:</strong> DocuMedi is an AI-assisted personal health documentation platform.
               It does not diagnose medical conditions, provide clinical treatments, or replace licensed medical advice.
-              If you are experiencing a medical emergency, call your local emergency services immediately.
+              If you are experiencing a life-threatening emergency in India, call <strong>112</strong> immediately (or <strong>108</strong> for ambulance services).
             </p>
           </footer>
         </div>

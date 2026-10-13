@@ -244,7 +244,7 @@ export default function NoteReview() {
               onChange={(e) => handleFieldChange(key, e.target.value)}
               disabled={readOnly || isSaving}
               placeholder="Not provided"
-              style={readOnly ? { backgroundColor: '#f1f5f9', cursor: 'not-allowed', color: '#64748b' } : {}}
+              style={readOnly ? { backgroundColor: 'var(--color-bg-app)', cursor: 'not-allowed', color: 'var(--color-text-muted)' } : {}}
             />
           </section>
         ))}

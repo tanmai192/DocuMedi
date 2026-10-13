@@ -180,13 +180,13 @@ export default function CaseChat() {
           <line x1="12" y1="17" x2="12.01" y2="17" />
         </svg>
         <span>
-          <strong>Documentation Notice:</strong> DocuMedi is a documentation tool, not a doctor. If you are experiencing a life-threatening emergency, call 911 immediately.
+          <strong>Documentation Notice:</strong> DocuMedi is a documentation tool, not a doctor. If you are experiencing a life-threatening emergency in India, call <strong>112</strong> immediately (or <strong>108</strong> for ambulance services).
         </span>
       </div>
 
       {/* Provider / System Banner */}
       {systemNotice && (
-        <div style={{ backgroundColor: '#f0f9ff', borderBottom: '1px solid #bae6fd', padding: '0.45rem 1.25rem', fontSize: '0.8rem', color: '#0369a1' }}>
+        <div style={{ backgroundColor: 'var(--color-info-bg)', borderBottom: '1px solid var(--color-info-border)', padding: '0.45rem 1.25rem', fontSize: '0.8rem', color: 'var(--color-secondary)' }}>
           ℹ️ {systemNotice}
         </div>
       )}
@@ -195,10 +195,10 @@ export default function CaseChat() {
       {showEndConfirm && (
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(15, 23, 42, 0.45)', zIndex: 100,
+          backgroundColor: 'rgba(51, 43, 39, 0.5)', zIndex: 100,
           display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem'
         }}>
-          <div className="card" style={{ maxWidth: '440px', width: '100%', padding: '1.75rem', boxShadow: 'var(--shadow-card)' }}>
+          <div className="card" style={{ maxWidth: '440px', width: '100%', padding: '1.75rem', boxShadow: 'var(--shadow-card)', border: '1px solid var(--color-border)' }}>
             <h3 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '0.5rem', color: 'var(--color-dark)' }}>
               End Case Consultation?
             </h3>
