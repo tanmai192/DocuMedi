@@ -5,7 +5,7 @@ export default function NotFound() {
   return (
     <div style={{ maxWidth: '520px', margin: '4rem auto', textAlign: 'center' }}>
       <div className="card" style={{ padding: '3rem 2rem' }}>
-        <div style={{ fontSize: '3rem', fontWeight: 900, color: 'var(--color-primary)', marginBottom: '0.5rem' }}>
+        <div style={{ fontSize: '3rem', fontWeight: 900, color: 'var(--color-brand-dark)', marginBottom: '0.5rem' }}>
           404
         </div>
         <h1 style={{ fontSize: '1.4rem', fontWeight: 700, marginBottom: '0.75rem', color: 'var(--color-dark)' }}>

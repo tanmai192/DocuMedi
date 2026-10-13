@@ -430,7 +430,94 @@ def run_conversational_ai_tests():
         c5_ai2 = c5_t2.json()["ai_response"]["message_content"]
         assert "clarify" in c5_ai2.lower(), f"Expected focused clarification: {c5_ai2}"
         assert "movement" in c5_ai2.lower() or "activity" in c5_ai2.lower() or "change" in c5_ai2.lower()
-        print("  [OK] Unclear patient responses receive focused clarification without repeating the script.")
+        # Step 8: Final Confirmation behavior ('no', 'nothing else', and meaningful additional medical detail)
+        print("\n[10/10] Testing final confirmation response ('no', 'nothing else', and new medical details)...")
+        case6 = client.post("/cases", json={"case_title": "Final Confirmation Test Case"}, headers=headers)
+        case6_id = case6.json()["id"]
+
+        # Progress through clinical intake to wrap-up
+        c6_t1 = client.post(f"/cases/{case6_id}/messages", json={
+            "message_content": "I have a cough since yesterday, 4 out of 10, dry."
+        }, headers=headers)
+        assert c6_t1.status_code == 200
+
+        c6_t2 = client.post(f"/cases/{case6_id}/messages", json={
+            "message_content": "warm tea helped a bit"
+        }, headers=headers)
+        assert c6_t2.status_code == 200
+
+        c6_t3 = client.post(f"/cases/{case6_id}/messages", json={
+            "message_content": "no medications"
+        }, headers=headers)
+        assert c6_t3.status_code == 200
+
+        c6_t4 = client.post(f"/cases/{case6_id}/messages", json={
+            "message_content": "no allergies"
+        }, headers=headers)
+        assert c6_t4.status_code == 200
+
+        c6_t5 = client.post(f"/cases/{case6_id}/messages", json={
+            "message_content": "no medical history"
+        }, headers=headers)
+        assert c6_t5.status_code == 200
+        c6_ai5 = c6_t5.json()["ai_response"]["message_content"]
+        assert "finish consultation" in c6_ai5.lower() or "finalize" in c6_ai5.lower() or "anything else" in c6_ai5.lower()
+
+        # Turn 6A: Patient responds with 'no'
+        c6_t6 = client.post(f"/cases/{case6_id}/messages", json={
+            "message_content": "no"
+        }, headers=headers)
+        assert c6_t6.status_code == 200
+        c6_ai6 = c6_t6.json()["ai_response"]["message_content"]
+
+        # Assert: brief response, no clinical summary repetition, no closing question repetition
+        assert "finish consultation" in c6_ai6.lower(), f"Expected Finish Consultation prompt: {c6_ai6}"
+        assert "okay, thank you" in c6_ai6.lower() or "thank you" in c6_ai6.lower()
+        assert "you have provided a thorough overview" not in c6_ai6.lower(), f"Must not repeat clinical summary: {c6_ai6}"
+        assert "anything else you would like to include" not in c6_ai6.lower(), f"Must not re-ask closing question: {c6_ai6}"
+
+        # Assert: consultation is NOT automatically finished (still active)
+        case6_check = client.get(f"/cases/{case6_id}", headers=headers)
+        assert case6_check.status_code == 200
+        assert case6_check.json()["status"] == "active", "Case must remain active until patient explicitly ends it"
+
+        # Turn 6B: Test 'nothing else' in a fresh consultation
+        case7 = client.post("/cases", json={"case_title": "Nothing Else Test Case"}, headers=headers)
+        case7_id = case7.json()["id"]
+        client.post(f"/cases/{case7_id}/messages", json={"message_content": "headache since morning, 5/10, throbbing"}, headers=headers)
+        client.post(f"/cases/{case7_id}/messages", json={"message_content": "rest helped"}, headers=headers)
+        client.post(f"/cases/{case7_id}/messages", json={"message_content": "no medications"}, headers=headers)
+        client.post(f"/cases/{case7_id}/messages", json={"message_content": "no allergies"}, headers=headers)
+        c7_t5 = client.post(f"/cases/{case7_id}/messages", json={"message_content": "no history"}, headers=headers)
+        assert c7_t5.status_code == 200
+
+        c7_t6 = client.post(f"/cases/{case7_id}/messages", json={"message_content": "nothing else"}, headers=headers)
+        assert c7_t6.status_code == 200
+        c7_ai6 = c7_t6.json()["ai_response"]["message_content"]
+        assert "finish consultation" in c7_ai6.lower()
+        assert "you have provided a thorough overview" not in c7_ai6.lower()
+        assert "anything else you would like to include" not in c7_ai6.lower()
+
+        # Turn 6C: Test patient providing meaningful additional medical details instead of declining
+        case8 = client.post("/cases", json={"case_title": "Additional Symptoms Test Case"}, headers=headers)
+        case8_id = case8.json()["id"]
+        client.post(f"/cases/{case8_id}/messages", json={"message_content": "cough for 3 days, 6/10, dry"}, headers=headers)
+        client.post(f"/cases/{case8_id}/messages", json={"message_content": "nothing helped"}, headers=headers)
+        client.post(f"/cases/{case8_id}/messages", json={"message_content": "no meds"}, headers=headers)
+        client.post(f"/cases/{case8_id}/messages", json={"message_content": "no allergies"}, headers=headers)
+        client.post(f"/cases/{case8_id}/messages", json={"message_content": "no history"}, headers=headers)
+
+        # Patient provides additional clinical symptom instead of declining
+        c8_t6 = client.post(f"/cases/{case8_id}/messages", json={
+            "message_content": "Actually, my left ear has also been throbbing and hurts since this morning."
+        }, headers=headers)
+        assert c8_t6.status_code == 200
+        c8_ai6 = c8_t6.json()["ai_response"]["message_content"]
+
+        # Assert: Did NOT treat this as 'nothing else'
+        assert c8_ai6 != "Okay, thank you. You can select Finish Consultation when you're ready to review your clinical note."
+        assert "ear" in c8_ai6.lower() or "throbbing" in c8_ai6.lower() or "noted" in c8_ai6.lower()
+        print("  [OK] Final confirmation correctly handles 'no', 'nothing else', preserves additional medical details, and does not prematurely finish case.")
 
         print("\n" + "=" * 75)
         print("SUCCESS: ALL CONVERSATIONAL AI & SYMPTOM TRACKING TESTS PASSED!")

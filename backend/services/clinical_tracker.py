@@ -110,6 +110,103 @@ def is_relief_or_aggravating_question(text: Optional[str]) -> bool:
     return has_relieve_worse and has_question_context
 
 
+def is_final_confirmation_question(text: Optional[str]) -> bool:
+    """
+    Detect whether an AI inquiry asks whether the patient wants to include/add
+    anything else before finalizing the consultation note or concludes intake.
+    """
+    if not text:
+        return False
+    t_lower = text.lower()
+    if "before we finalize" in t_lower or "before finalizing" in t_lower:
+        return True
+    if "finalize your consultation" in t_lower or "finalize our consultation" in t_lower:
+        return True
+    if "anything else" in t_lower and any(w in t_lower for w in ["finalize", "consultation note", "finish", "conclude", "include", "add", "share"]):
+        return True
+    if "finish consultation" in t_lower and any(w in t_lower for w in ["anything else", "other details", "share any", "feel free to share", "any other", "whenever you feel ready", "when you're ready"]):
+        return True
+    return False
+
+
+def is_final_completion_response(patient_message: str) -> bool:
+    """
+    Detect whether a patient gave a clear negative or completion response
+    (e.g., 'no', 'nothing', 'nothing else', 'that's all', 'nothing more', 'I'm done')
+    specifically to a final wrap-up confirmation inquiry.
+    Must NOT trigger if the patient provided meaningful medical details (e.g. new symptoms or treatments).
+    """
+    if not patient_message:
+        return False
+
+    cleaned = patient_message.strip()
+    lower = cleaned.lower()
+
+    # Normalize: strip punctuation
+    norm = re.sub(r"[^\w\s']", " ", lower).strip()
+    norm = re.sub(r"\s+", " ", norm)
+
+    # Check for known medical/symptom keywords or qualifiers that indicate real medical information
+    medical_clues = [
+        "pain", "hurt", "hurts", "ache", "aching", "cough", "coughing", "fever", "rash",
+        "nausea", "vomit", "vomiting", "dizzy", "dizziness", "headache", "throat",
+        "swelling", "swollen", "bleed", "bleeding", "burn", "burning", "chest", "breath",
+        "breathing", "stomach", "ear", "ears", "eye", "eyes", "leg", "legs", "arm", "arms",
+        "back", "knee", "knees", "shoulder", "shoulders", "mucus", "chills", "medication",
+        "medications", "allergy", "allergies", "allergic", "pill", "tablet", "dose",
+        "took", "taking", "started", "worse", "better", "mild", "severe", "except",
+        "actually", "also have", "started to", "now have", "feeling"
+    ]
+    for word in medical_clues:
+        if re.search(rf"\b{word}\b", norm):
+            return False
+
+    exact_phrases = {
+        "no",
+        "nope",
+        "nah",
+        "nothing",
+        "nothing else",
+        "nothing more",
+        "nothing really",
+        "nothing to add",
+        "nothing else to add",
+        "nothing to report",
+        "nothing else to report",
+        "that's all",
+        "thats all",
+        "that is all",
+        "all done",
+        "i'm done",
+        "im done",
+        "i am done",
+        "no more",
+        "all good",
+        "no thank you",
+        "no thanks",
+        "nothing thanks",
+        "nothing thank you",
+        "no that's all",
+        "no thats all",
+        "no that is all",
+        "no nothing else",
+        "no nothing",
+        "that would be all",
+        "that will be all",
+        "none",
+        "none that's all",
+    }
+
+    if norm in exact_phrases:
+        return True
+
+    pattern = (
+        r"^(?:no|nope|nah|nothing|nothing\s+else|that'?s\s+all|that\s+is\s+all|nothing\s+more|i'?m\s+done|i\s+am\s+done|all\s+done)"
+        r"(?:\s+(?:thank\s+you|thanks|that'?s\s+all|that\s+is\s+all|nothing\s+else|i'?m\s+done))?[.!]?$"
+    )
+    return bool(re.match(pattern, norm))
+
+
 class ClinicalDialogueState:
     """
     Cumulative clinical memory of the entire consultation.
@@ -851,6 +948,12 @@ def generate_adaptive_follow_up_questions(
             return cand
 
     # Priority 4: All core dimensions collected -> Wrap-up completion invitation
+    if is_final_confirmation_question(previous_ai_message):
+        return (
+            "Whenever you feel ready, please select **'Finish Consultation'** below to review your structured 11-section clinical note, "
+            "or feel free to share any other details you would like included."
+        )
+
     summary_points = []
     if state.symptoms:
         summary_points.append(f"symptoms ({', '.join(state.symptoms)})")

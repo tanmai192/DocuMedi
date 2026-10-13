@@ -21,8 +21,12 @@ from services.clinical_tracker import (
     generate_empathetic_acknowledgment,
     generate_adaptive_follow_up_questions,
     is_relief_or_aggravating_question,
+    is_final_confirmation_question,
+    is_final_completion_response,
     ClinicalDialogueState
 )
+
+FINAL_COMPLETION_RESPONSE = "Okay, thank you. You can select Finish Consultation when you're ready to review your clinical note."
 
 load_dotenv()
 
@@ -136,7 +140,11 @@ def generate_rules_fallback_response(history: List[Dict[str, str]], patient_mess
             last_ai_msg = msg.get("message_content", "").strip()
             break
 
-    # 2. Build cumulative clinical dialogue state across all history + current message
+    # 2. Check if AI asked the final wrap-up question and patient declined adding further information
+    if is_final_confirmation_question(last_ai_msg) and is_final_completion_response(patient_message):
+        return FINAL_COMPLETION_RESPONSE
+
+    # 3. Build cumulative clinical dialogue state across all history + current message
     state = build_clinical_state_from_history(history, patient_message)
 
     # 3. Active listening reflection reflecting patient's latest message and connecting symptoms
@@ -203,6 +211,10 @@ STRICT DIALOGUE RULES FOR YOUR RESPONSE:
    - If Allergies are confirmed ({state.allergies}), NEVER ask about allergies.
 3. NEW SYMPTOMS: If a new symptom was mentioned, warmly acknowledge it and explore how it connects to earlier symptoms.
 4. Ask ONLY ONE relevant next question focusing strictly on what is still marked 'NOT ANSWERED' above.
+5. FINAL CONFIRMATION & COMPLETION:
+   - If the previous AI message asked if there is anything else to include before finalizing (or invited the patient to finish), and the patient responded with 'no', 'nothing', 'nothing else', 'that's all', or 'I'm done', respond briefly:
+     'Okay, thank you. You can select Finish Consultation when you're ready to review your clinical note.'
+   - NEVER repeat the full clinical summary or re-ask the final confirmation question after the patient declines.
 """
 
 
@@ -297,6 +309,20 @@ async def process_patient_message(
     """
     is_emergency = detect_emergencies(patient_message)
     provider, api_key, model = get_ai_config()
+
+    # Find the most recent AI message from history
+    last_ai_msg = None
+    for msg in reversed(history):
+        if msg.get("sender_role") == "ai":
+            last_ai_msg = msg.get("message_content", "").strip()
+            break
+
+    # Immediate handling for final confirmation completion before calling LLM or rules fallback
+    if is_final_confirmation_question(last_ai_msg) and is_final_completion_response(patient_message):
+        reply = FINAL_COMPLETION_RESPONSE
+        if is_emergency:
+            reply = reply + EMERGENCY_WARNING
+        return reply, bool(api_key), provider if api_key else "clinical_intake_rules", None
 
     ai_text = None
     is_live = False

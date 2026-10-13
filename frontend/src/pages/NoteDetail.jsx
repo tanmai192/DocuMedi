@@ -225,7 +225,7 @@ export default function NoteDetail() {
       <article className="document-sheet">
         <header className="document-header">
           <div className="document-title-block">
-            <span style={{ fontSize: '0.8rem', color: 'var(--color-primary)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            <span style={{ fontSize: '0.78rem', color: 'var(--color-brand-dark)', backgroundColor: 'var(--color-primary-light)', padding: '0.2rem 0.65rem', borderRadius: 'var(--radius-full)', display: 'inline-block', marginBottom: '0.35rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
               Confirmed Clinical Record #{note?.id}
             </span>
             <h1>DocuMedi Clinical Patient Note</h1>

@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
-  <rect width="32" height="32" rx="8" fill="#3F6B4F" stroke="#E4D4BA" stroke-width="1"/>
-  <path d="M9 7C9 5.89543 9.89543 5 11 5H18L23 10V25C23 26.1046 22.1046 27 21 27H11C9.89543 27 9 26.1046 9 25V7Z" fill="#FFFAF0" stroke="#E4D4BA" stroke-width="0.8"/>
-  <path d="M18 5V10H23" fill="#E4D4BA"/>
+  <rect width="32" height="32" rx="8" fill="#3D2528" stroke="#E8DCE0" stroke-width="1"/>
+  <path d="M9 7C9 5.89543 9.89543 5 11 5H18L23 10V25C23 26.1046 22.1046 27 21 27H11C9.89543 27 9 26.1046 9 25V7Z" fill="#FFFFFF" stroke="#E8DCE0" stroke-width="0.8"/>
+  <path d="M18 5V10H23" fill="#8A8B55"/>
   <!-- Medical Cross -->
-  <path d="M16 14V22M12 18H20" stroke="#C2185B" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M16 14V22M12 18H20" stroke="#FFB7D5" stroke-width="2.5" stroke-linecap="round"/>
 </svg>
