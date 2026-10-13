@@ -1047,3 +1047,128 @@ a:hover {
     padding: 1.5rem 1.25rem;
   }
 }
+
+/* =========================================================
+   Stage 7: Medical History Timeline Styling
+   ========================================================= */
+
+.timeline-wrapper {
+  max-width: 880px;
+  margin: 0 auto;
+}
+
+.timeline-header-area {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+  flex-wrap: wrap;
+}
+
+.timeline-track {
+  position: relative;
+  padding-left: 2rem;
+}
+
+.timeline-track::before {
+  content: '';
+  position: absolute;
+  top: 15px;
+  bottom: 20px;
+  left: 8px;
+  width: 2px;
+  background: linear-gradient(180deg, var(--color-primary) 0%, var(--color-border) 100%);
+  border-radius: 2px;
+}
+
+.timeline-entry {
+  position: relative;
+  margin-bottom: 2rem;
+}
+
+.timeline-node {
+  position: absolute;
+  left: -2rem;
+  top: 1.25rem;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background-color: #ffffff;
+  border: 3.5px solid var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-light);
+  z-index: 2;
+}
+
+.timeline-card {
+  background-color: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 1.75rem;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.2s ease;
+}
+
+.timeline-card:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--color-primary-light);
+}
+
+.timeline-entry-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.timeline-case-title {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--color-dark);
+}
+
+.timeline-timestamp {
+  font-size: 0.82rem;
+  color: var(--color-slate-600);
+  font-weight: 600;
+}
+
+.timeline-complaint {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-primary-hover);
+  margin-bottom: 0.5rem;
+}
+
+.timeline-summary-text {
+  font-size: 0.92rem;
+  line-height: 1.6;
+  color: var(--color-slate-600);
+  margin-bottom: 1.25rem;
+  background-color: #f8fafc;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-md);
+  border-left: 3px solid var(--color-primary);
+}
+
+.timeline-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 640px) {
+  .timeline-track {
+    padding-left: 1.5rem;
+  }
+  .timeline-node {
+    left: -1.5rem;
+  }
+  .timeline-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

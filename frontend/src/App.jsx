@@ -12,9 +12,10 @@ import CaseChat from './pages/CaseChat';
 import NoteReview from './pages/NoteReview';
 import NoteDetail from './pages/NoteDetail';
 
-import HistoryPlaceholder from './pages/HistoryPlaceholder';
+import MedicalHistory from './pages/MedicalHistory';
 import NotFound from './pages/NotFound';
 import './styles/index.css';
+
 
 
 export default function App() {
@@ -93,10 +94,11 @@ export default function App() {
                 path="/history"
                 element={
                   <ProtectedRoute>
-                    <HistoryPlaceholder />
+                    <MedicalHistory />
                   </ProtectedRoute>
                 }
               />
+
               <Route
                 path="/profile"
                 element={

@@ -103,11 +103,17 @@ export default function Dashboard() {
       {/* Saved Patient Notes Section */}
       <section style={{ marginBottom: '2.5rem' }}>
         <div className="section-header">
-          <h2 className="section-title">Saved Clinical Notes</h2>
-          <span style={{ fontSize: '0.85rem', color: 'var(--color-slate-600)' }}>
-            {savedNotesCount} {savedNotesCount === 1 ? 'note' : 'notes'} recorded
-          </span>
+          <div>
+            <h2 className="section-title">Saved Clinical Notes</h2>
+            <span style={{ fontSize: '0.85rem', color: 'var(--color-slate-600)' }}>
+              {savedNotesCount} {savedNotesCount === 1 ? 'note' : 'notes'} recorded
+            </span>
+          </div>
+          <Link to="/history" className="btn btn-outline" style={{ padding: '0.45rem 1rem', fontSize: '0.88rem' }}>
+            View Full Timeline →
+          </Link>
         </div>
+
 
         {isLoading ? (
           <div className="card" style={{ textAlign: 'center', padding: '2rem' }}>

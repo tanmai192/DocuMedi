@@ -160,11 +160,18 @@ class ApiClient {
     });
   }
 
+  async getTimeline() {
+    return this.request('/notes/timeline', {
+      method: 'GET',
+    });
+  }
+
   async getNoteDetails(noteId) {
     return this.request(`/notes/${noteId}`, {
       method: 'GET',
     });
   }
+
 
   async updateNote(noteId, noteData) {
     return this.request(`/notes/${noteId}`, {

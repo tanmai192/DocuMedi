@@ -221,3 +221,21 @@ class NoteSummaryResponse(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# -------------------------------------------------------------
+# Medical History Timeline Schemas (Stage 7)
+# -------------------------------------------------------------
+
+class TimelineEntryResponse(BaseModel):
+    """Schema for an item in the My Medical History chronological timeline."""
+    note_id: int
+    case_id: int
+    case_title: str
+    case_status: str
+    chief_complaint: str
+    summary: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
