@@ -352,6 +352,86 @@ def run_conversational_ai_tests():
         assert "911" not in emg_ai_text, f"Emergency notice must NOT contain 911: {emg_ai_text}"
         print("  [OK] Emergency notice correctly displays India 112 (and 108) with no 911 reference.")
 
+        # Step 7: Regression test for symptom-relief extraction and non-repetition
+        print("\n[9/9] Testing symptom-relief bug fix ('when I lift my hand', no meds, note HPI, clarification)...")
+        case4 = client.post("/cases", json={"case_title": "Shoulder Pain Consultation"}, headers=headers)
+        case4_id = case4.json()["id"]
+
+        # Turn 1: Patient provides initial symptom, duration, severity, and character
+        t1_res = client.post(f"/cases/{case4_id}/messages", json={
+            "message_content": "I have shoulder pain since yesterday, 6 out of 10, dull ache."
+        }, headers=headers)
+        assert t1_res.status_code == 200
+        t1_ai = t1_res.json()["ai_response"]["message_content"]
+        assert "better or worse" in t1_ai.lower() or "relief" in t1_ai.lower(), f"Expected symptom-relief inquiry: {t1_ai}"
+
+        # Turn 2: Patient answers natural trigger phrase: 'when I lift my hand'
+        t2_res = client.post(f"/cases/{case4_id}/messages", json={
+            "message_content": "when I lift my hand"
+        }, headers=headers)
+        assert t2_res.status_code == 200
+        t2_ai = t2_res.json()["ai_response"]["message_content"]
+
+        # Assert: Acknowledges hand movement/lifting
+        assert "hand" in t2_ai.lower(), f"AI must acknowledge hand lifting: {t2_ai}"
+        # Assert: MUST NOT repeat the symptom-relief question
+        assert "better or worse" not in t2_ai.lower(), f"AI repeated better or worse question! {t2_ai}"
+        assert "provided relief" not in t2_ai.lower(), f"AI repeated relief question! {t2_ai}"
+        # Assert: Next question moves forward to medications
+        assert "medication" in t2_ai.lower() or "prescription" in t2_ai.lower(), f"AI must ask medications: {t2_ai}"
+
+        # Turn 3: Patient answers 'no medications'
+        t3_res = client.post(f"/cases/{case4_id}/messages", json={
+            "message_content": "no medications"
+        }, headers=headers)
+        assert t3_res.status_code == 200
+        t3_ai = t3_res.json()["ai_response"]["message_content"]
+
+        # Assert: Acknowledges medications
+        assert "not currently taking" in t3_ai.lower() or "no medication" in t3_ai.lower() or "medication" in t3_ai.lower()
+        # Assert: MUST NOT re-ask symptom relief on subsequent turns
+        assert "better or worse" not in t3_ai.lower(), f"AI re-asked better or worse on subsequent turn! {t3_ai}"
+        assert "provided relief" not in t3_ai.lower(), f"AI re-asked relief on subsequent turn! {t3_ai}"
+        # Assert: Moves to allergies
+        assert "allerg" in t3_ai.lower(), f"AI should ask about allergies: {t3_ai}"
+
+        # Turn 4: Patient answers allergies
+        t4_res = client.post(f"/cases/{case4_id}/messages", json={
+            "message_content": "no allergies"
+        }, headers=headers)
+        assert t4_res.status_code == 200
+        t4_ai = t4_res.json()["ai_response"]["message_content"]
+        assert "better or worse" not in t4_ai.lower(), f"AI re-asked better or worse on allergies turn! {t4_ai}"
+        assert "medical history" in t4_ai.lower() or "chronic" in t4_ai.lower() or "family" in t4_ai.lower()
+
+        # Turn 5: End case and generate note — verify HPI includes hand lifting
+        end4 = client.post(f"/cases/{case4_id}/end", headers=headers)
+        assert end4.status_code == 200
+        gen4 = client.post(f"/cases/{case4_id}/generate-note", headers=headers)
+        assert gen4.status_code == 200
+        note4 = gen4.json()["note"]
+
+        assert "when I lift my hand" in note4["hpi"], f"HPI must faithfully retain 'when I lift my hand': {note4['hpi']}"
+        assert "6/10" in note4["hpi"]
+        print("  [OK] Exact sequence verified: hand lifting acknowledged, no repetition, note HPI retained.")
+
+        # Test unclear answer clarification behavior
+        case5 = client.post("/cases", json={"case_title": "Clarification Test Case"}, headers=headers)
+        case5_id = case5.json()["id"]
+        c5_t1 = client.post(f"/cases/{case5_id}/messages", json={
+            "message_content": "I have knee pain since yesterday, 5/10, aching."
+        }, headers=headers)
+        assert c5_t1.status_code == 200
+        # Patient gives unclear answer 'what do you mean?'
+        c5_t2 = client.post(f"/cases/{case5_id}/messages", json={
+            "message_content": "what do you mean?"
+        }, headers=headers)
+        assert c5_t2.status_code == 200
+        c5_ai2 = c5_t2.json()["ai_response"]["message_content"]
+        assert "clarify" in c5_ai2.lower(), f"Expected focused clarification: {c5_ai2}"
+        assert "movement" in c5_ai2.lower() or "activity" in c5_ai2.lower() or "change" in c5_ai2.lower()
+        print("  [OK] Unclear patient responses receive focused clarification without repeating the script.")
+
         print("\n" + "=" * 75)
         print("SUCCESS: ALL CONVERSATIONAL AI & SYMPTOM TRACKING TESTS PASSED!")
         print("=" * 75)

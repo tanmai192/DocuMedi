@@ -123,7 +123,11 @@ def extract_fallback_note(history: List[Dict[str, str]]) -> Dict[str, str]:
         hpi_parts.append(" ".join(pres_items) + ".")
 
         if state.relieving_aggravating:
-            hpi_parts.append(f"Symptoms are {state.relieving_aggravating}.")
+            ra = state.relieving_aggravating.strip()
+            if ra.lower().startswith(("symptoms are", "aggravated", "relieved", "home remedies", "worse", "better", "none identified")):
+                hpi_parts.append(f"{ra.capitalize()}.")
+            else:
+                hpi_parts.append(f"Relieving or aggravating factors: {ra}.")
 
         if state.medications and state.medications != "None reported":
             hpi_parts.append(f"Current medication or treatment used: {state.medications}.")

@@ -84,6 +84,32 @@ def normalize_patient_text(text: str) -> str:
     return cleaned
 
 
+def is_relief_or_aggravating_question(text: Optional[str]) -> bool:
+    """
+    Identifies whether an AI inquiry asks if anything relieves, worsens,
+    or triggers symptoms (or home remedies).
+    """
+    if not text:
+        return False
+    lower = text.lower()
+    phrases = [
+        "better or worse", "better, or worse", "worse, or better",
+        "better and worse", "makes it worse", "make it worse",
+        "makes them worse", "make them worse", "makes the symptoms feel",
+        "make the symptoms feel", "feel better or worse",
+        "provided relief", "provide relief", "brings relief", "bring relief",
+        "helped provide relief", "helps relieve", "helped relieve",
+        "helped so far", "trigger worse", "triggers worse", "triggers coughing",
+        "warm tea or steam helped", "tea or steam helped",
+        "bright lights, sound", "physical activity makes it worse"
+    ]
+    if any(p in lower for p in phrases):
+        return True
+    has_relieve_worse = any(w in lower for w in ["better", "worse", "relief", "relieve", "helped", "trigger"])
+    has_question_context = any(w in lower for w in ["anything", "noticed", "tried", "makes", "make", "does", "have you", "what"])
+    return has_relieve_worse and has_question_context
+
+
 class ClinicalDialogueState:
     """
     Cumulative clinical memory of the entire consultation.
@@ -117,6 +143,7 @@ class ClinicalDialogueState:
         self.turn_new_meds: bool = False
         self.turn_new_allergies: bool = False
         self.turn_new_denials: Set[str] = set()
+        self.turn_needs_clarification: Optional[str] = None
 
         self.patient_message_count: int = 0
         self.raw_patient_messages: List[str] = []
@@ -173,6 +200,7 @@ class ClinicalDialogueState:
             self.turn_new_meds = False
             self.turn_new_allergies = False
             self.turn_new_denials = set()
+            self.turn_needs_clarification = None
 
         # 1. Extract Negated / Denied Symptoms first
         negated_terms = set()
@@ -383,25 +411,73 @@ class ClinicalDialogueState:
                     self.turn_new_location = True
 
         # 7. Extract Relieving / Aggravating factors
+        prev_asked_relief = is_relief_or_aggravating_question(previous_ai_message)
+
         if not self.relieving_aggravating or "Home remedies" in self.relieving_aggravating:
-            if re.search(r"\b(?:sensitive to light|light sensitivity|photophobia)\b", lower):
+            # 7a. Unclear / ambiguous response to a relief question
+            unclear_patterns = [
+                r"^(?:maybe|perhaps|not\s+sure|i\s+don'?t\s+know|idk|i'?m\s+not\s+certain|no\s+idea)[?!.]*$",
+                r"^(?:what\s+do\s+you\s+mean|can\s+you\s+clarify|why|what|huh)[?!.]*$"
+            ]
+            if prev_asked_relief and any(re.search(p, lower) for p in unclear_patterns):
+                if is_latest:
+                    self.turn_needs_clarification = "relieving_aggravating"
+
+            # 7b. Explicit denial in response to relief question (e.g. "nothing", "not really", "no")
+            elif prev_asked_relief and (
+                is_pure_denial
+                or lower in {"nothing", "nothing really", "not really", "haven't noticed anything", "no nothing"}
+                or re.search(r"\b(?:nothing\s+(?:helps|makes\s+it|worked)|not\s+noticed\s+anything)\b", lower)
+            ):
+                self.relieving_aggravating = "None identified (patient reports nothing notably improves or worsens symptoms)"
+                if is_latest:
+                    self.turn_new_relieving_aggravating = True
+
+            # 7c. Explicit aggravating factor stated
+            elif any(k in lower for k in ["worse with", "makes it worse", "make it worse", "light makes", "sound makes", "moving makes", "worse when", "aggravated by"]):
+                m = re.search(r"\b((?:worse|aggravated)\s+(?:with|when|by)[^.,;\n]+|makes?\s+it\s+worse[^.,;\n]*|lifting\s+my\s+arm\s+makes\s+it\s+worse[^.,;\n]*)", cleaned, flags=re.IGNORECASE)
+                if m:
+                    self.relieving_aggravating = m.group(0).strip()
+                else:
+                    self.relieving_aggravating = cleaned
+                if is_latest:
+                    self.turn_new_relieving_aggravating = True
+
+            # 7d. Explicit relieving factor stated
+            elif any(k in lower for k in ["better with", "helps", "relieved by", "better when", "provides relief"]):
+                m = re.search(r"\b(better\s+(?:with|when)[^.,;\n]+|relieved\s+by[^.,;\n]+|provides?\s+relief[^.,;\n]*)", cleaned, flags=re.IGNORECASE)
+                if m:
+                    self.relieving_aggravating = m.group(0).strip()
+                else:
+                    self.relieving_aggravating = cleaned
+                if is_latest:
+                    self.turn_new_relieving_aggravating = True
+
+            # 7e. Direct pain/hurt triggers (e.g. "it hurts when I move", "pain when lifting")
+            elif re.search(r"\b(?:hurts?|pain|ache|discomfort)\s+(?:when|with|while|after|if)\s+[^.,;\n]+", lower):
+                m = re.search(r"\b(?:hurts?|pain|ache|discomfort)\s+(?:when|with|while|after|if)\s+[^.,;\n]+", cleaned, flags=re.IGNORECASE)
+                self.relieving_aggravating = m.group(0).strip()
+                if is_latest:
+                    self.turn_new_relieving_aggravating = True
+
+            # 7f. Contextual descriptive answer to relief inquiry or temporal/activity trigger
+            elif prev_asked_relief or re.search(r"\b(?:when|while)\s+(?:i\s+)?(?:lift|move|bend|walk|breathe|cough|swallow|stand|sit|turn|run|stretch|reach|eat)\w*\b", lower):
+                m_when = re.search(r"\b(?:when|while)\s+(?:i\s+)?[a-zA-Z\s]+", cleaned, flags=re.IGNORECASE)
+                if m_when and not any(k in lower for k in ["when did", "when it started"]):
+                    self.relieving_aggravating = m_when.group(0).strip()
+                    if is_latest:
+                        self.turn_new_relieving_aggravating = True
+                elif prev_asked_relief and len(cleaned.split()) <= 15 and not any(k in lower for k in ["year", "month", "scale", "fever"]):
+                    self.relieving_aggravating = cleaned
+                    if is_latest:
+                        self.turn_new_relieving_aggravating = True
+
+            elif re.search(r"\b(?:sensitive to light|light sensitivity|photophobia)\b", lower):
                 self.relieving_aggravating = "Aggravated by bright light / sensitivity to light"
                 if is_latest:
                     self.turn_new_relieving_aggravating = True
             elif re.search(r"\b(?:barely helped|didn't help|did not help|partially helped|helped a bit|helped)\b", lower):
                 m = re.search(r"\b([^.,;\n]*(?:barely helped|didn't help|did not help|helped|relieved)[^.,;\n]*)", lower)
-                if m:
-                    self.relieving_aggravating = m.group(1).strip()
-                    if is_latest:
-                        self.turn_new_relieving_aggravating = True
-            elif any(k in lower for k in ["worse with", "makes it worse", "light makes", "sound makes", "moving makes", "worse when", "aggravated by"]):
-                m = re.search(r"\b((?:worse|aggravated)\s+(?:with|when|by)[^.,;\n]+|makes?\s+it\s+worse[^.,;\n]*)", lower)
-                if m:
-                    self.relieving_aggravating = m.group(1).strip()
-                    if is_latest:
-                        self.turn_new_relieving_aggravating = True
-            elif any(k in lower for k in ["better with", "helps", "relieved by", "better when"]):
-                m = re.search(r"\b(better\s+(?:with|when)[^.,;\n]+|relieved\s+by[^.,;\n]+)", lower)
                 if m:
                     self.relieving_aggravating = m.group(1).strip()
                     if is_latest:
@@ -609,8 +685,22 @@ def generate_empathetic_acknowledgment(state: ClinicalDialogueState, latest_mess
         return f"Understood, I have recorded that {', and '.join(recorded)}."
 
     # 7. Relieving / aggravating factors
+    if state.turn_needs_clarification == "relieving_aggravating":
+        return "To clarify:"
+
     if state.turn_new_relieving_aggravating and state.relieving_aggravating:
-        return f"I've noted what affects your symptoms ({state.relieving_aggravating})."
+        ra = state.relieving_aggravating.strip()
+        ra_lower = ra.lower()
+        if ra_lower.startswith("when "):
+            return f"Understood, I've noted that this happens {ra}."
+        elif "worse" in ra_lower or "hurts" in ra_lower or "pain" in ra_lower:
+            return f"I've noted that {ra}."
+        elif "better" in ra_lower or "relief" in ra_lower or "helps" in ra_lower:
+            return f"Understood, I've noted that {ra}."
+        elif "none identified" in ra_lower:
+            return "Understood, you haven't noticed anything that clearly makes it better or worse."
+        else:
+            return f"Understood, I've noted that: {ra}."
 
     # 8. General listener fallback
     return "Thank you for explaining that. I have noted this down in your consultation record."
@@ -641,11 +731,13 @@ def is_question_safe(
             return False
         if ("warm tea" in prev_lower or "steam" in prev_lower) and ("warm tea" in q_lower or "steam" in q_lower):
             return False
-        if ("medication" in prev_lower or "prescription" in prev_lower) and ("medication" in q_lower or "prescription" in q_lower):
+        if ("medication" in prev_lower or "prescription" in prev_lower) and ("medication" in q_lower or "prescription" in q_lower) and ("allerg" not in q_lower):
             return False
         if ("allerg" in prev_lower) and ("allerg" in q_lower):
             return False
         if ("medical history" in prev_lower or "chronic condition" in prev_lower) and ("medical history" in q_lower or "chronic condition" in q_lower):
+            return False
+        if is_relief_or_aggravating_question(prev_lower) and is_relief_or_aggravating_question(q_lower):
             return False
 
     # 2. State-based dimension checks
@@ -654,6 +746,8 @@ def is_question_safe(
     if state.onset_duration and any(k in q_lower for k in ["how long", "when did", "start suddenly", "how long have you"]):
         return False
     if state.character and any(k in q_lower for k in ["dry or", "mucus", "what the sensation feels like", "is it sharp"]):
+        return False
+    if state.relieving_aggravating and is_relief_or_aggravating_question(q_lower):
         return False
     if state.medications and any(k in q_lower for k in ["currently taking any", "prescription medications", "over-the-counter"]):
         return False
@@ -677,6 +771,10 @@ def generate_adaptive_follow_up_questions(
     """
     answered = state.answered_dimensions
     prev_lower = (previous_ai_message or state.last_asked_question or "").lower()
+
+    # Priority 0: Focused clarification for genuinely unclear relief answers
+    if state.turn_needs_clarification == "relieving_aggravating":
+        return "Could you clarify if any particular movement, activity, resting, or remedies change how your symptoms feel, or do they stay about the same?"
 
     # Priority 1: Newly introduced symptoms midway through conversation (turn > 1)
     if state.new_symptoms_in_turn and state.patient_message_count > 1:

@@ -20,6 +20,7 @@ from services.clinical_tracker import (
     build_clinical_state_from_history,
     generate_empathetic_acknowledgment,
     generate_adaptive_follow_up_questions,
+    is_relief_or_aggravating_question,
     ClinicalDialogueState
 )
 
@@ -147,8 +148,15 @@ def generate_rules_fallback_response(history: List[Dict[str, str]], patient_mess
     response = f"{ack} {question}".strip()
 
     # 5. HARD REPETITION GUARD:
-    # Under NO circumstances may the AI response be identical to the previous AI message!
-    if last_ai_msg and (response.lower() == last_ai_msg.lower() or question.lower() in last_ai_msg.lower()):
+    # Under NO circumstances may the AI response be identical to the previous AI message or repeat a relief question!
+    is_repeat = False
+    if last_ai_msg:
+        if response.lower() == last_ai_msg.lower() or question.lower() in last_ai_msg.lower():
+            is_repeat = True
+        elif is_relief_or_aggravating_question(last_ai_msg) and is_relief_or_aggravating_question(question):
+            is_repeat = True
+
+    if is_repeat:
         alt_question = None
         if not state.medications:
             alt_question = "Are you currently taking any prescription medications, over-the-counter remedies, or supplements for this or other health conditions?"
@@ -190,6 +198,7 @@ STRICT DIALOGUE RULES FOR YOUR RESPONSE:
    - If Onset/Duration is confirmed ({state.onset_duration}), NEVER ask when it started or how long it has lasted.
    - If Severity is confirmed ({state.severity}), NEVER ask for a 1-10 rating, severity, or discomfort level.
    - If Character is confirmed ({state.character}), NEVER ask what it feels like or if it's dry/mucus.
+   - If Relieving/Aggravating Factors are confirmed ({state.relieving_aggravating}), NEVER ask what makes it better or worse, or what provides relief.
    - If Medications are confirmed ({state.medications}), NEVER ask if they take medications.
    - If Allergies are confirmed ({state.allergies}), NEVER ask about allergies.
 3. NEW SYMPTOMS: If a new symptom was mentioned, warmly acknowledge it and explore how it connects to earlier symptoms.
