@@ -102,6 +102,31 @@ export default function NoteReview() {
     }
   };
 
+  const handleSaveAndDownloadPdf = async () => {
+    if (!note || isSaving) return;
+    setIsSaving(true);
+    setError('');
+
+    try {
+      // 1. Confirm and save the note to MySQL records first
+      const saved = await api.saveCaseNote(caseId, note);
+
+      // 2. Trigger official PDF generation and download
+      try {
+        await api.downloadNotePdf(saved.id);
+      } catch (pdfErr) {
+        console.warn('PDF download warning:', pdfErr.message);
+      }
+
+      // 3. Navigate to the verified note detail view
+      navigate(`/notes/${saved.id}`, { replace: true });
+    } catch (err) {
+      setError(err.message || 'Failed to save confirmed note. Please try again.');
+      setIsSaving(false);
+    }
+  };
+
+
   if (isLoading) {
     return (
       <div className="spinner-container">
@@ -146,6 +171,17 @@ export default function NoteReview() {
 
           <button
             type="button"
+            className="btn btn-outline"
+            style={{ fontSize: '0.88rem' }}
+            onClick={handleSaveAndDownloadPdf}
+            disabled={isSaving}
+            title="Official clinical PDFs are generated from saved medical records. Confirms and saves this note, then downloads the PDF."
+          >
+            {isSaving ? '⏳ Saving & Generating...' : '📄 Save & Download PDF'}
+          </button>
+
+          <button
+            type="button"
             className="btn btn-primary"
             style={{ fontSize: '0.92rem' }}
             onClick={handleSaveConfirmedNote}
@@ -156,11 +192,16 @@ export default function NoteReview() {
         </div>
       </div>
 
+
       {error && (
         <div className="alert alert-danger" style={{ maxWidth: '900px', margin: '0 auto 1.5rem' }}>
           <span>{error}</span>
         </div>
       )}
+
+      <div className="alert alert-info" style={{ maxWidth: '900px', margin: '0 auto 1.5rem', fontSize: '0.88rem' }}>
+        <span>📄 <strong>Official Record Policy:</strong> Official clinical PDFs are generated strictly from saved, verified medical records. Clicking <strong>Save & Download PDF</strong> confirms and saves this note permanently to your MySQL records and generates your downloadable PDF report.</span>
+      </div>
 
       {systemNotice && (
         <div className="alert alert-info" style={{ maxWidth: '900px', margin: '0 auto 1.5rem' }}>

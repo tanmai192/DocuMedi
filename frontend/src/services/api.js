@@ -179,7 +179,83 @@ class ApiClient {
       body: JSON.stringify(noteData),
     });
   }
+
+  /**
+   * Downloads a clinical note PDF as a binary Blob and triggers browser file save.
+   * Handles binary stream, safe filename extraction, and cleans up object URLs.
+   */
+  async downloadNotePdf(noteId, customFilename = null) {
+    const url = `${this.baseUrl}/notes/${noteId}/pdf`;
+    const token = this.getToken();
+
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers,
+      });
+
+      if (!response.ok) {
+        let errorMessage = 'Failed to download clinical note PDF. Please try again.';
+        try {
+          const errData = await response.json();
+          if (errData && errData.detail) {
+            errorMessage = errData.detail;
+          }
+        } catch (_) {
+          // Non-JSON error body fallback
+        }
+        const error = new Error(errorMessage);
+        error.status = response.status;
+        throw error;
+      }
+
+      // Extract filename from Content-Disposition header if available
+      let filename = customFilename;
+      if (!filename) {
+        const disposition = response.headers.get('content-disposition');
+        if (disposition && disposition.includes('filename=')) {
+          const match = disposition.match(/filename=["']?([^"';]+)["']?/);
+          if (match && match[1]) {
+            filename = match[1].trim();
+          }
+        }
+      }
+      if (!filename) {
+        filename = `DocuMedi_Report_Note_${noteId}.pdf`;
+      }
+
+      // Convert response to Blob
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+
+      // Create temporary anchor to trigger browser download
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+
+      // Cleanup DOM node and blob URL
+      document.body.removeChild(link);
+      setTimeout(() => {
+        window.URL.revokeObjectURL(blobUrl);
+      }, 200);
+
+      return { success: true, filename };
+    } catch (err) {
+      if (!err.status) {
+        throw new Error('Unable to connect to DocuMedi server to download PDF.');
+      }
+      throw err;
+    }
+  }
 }
+
 
 export const api = new ApiClient(API_BASE_URL);
 export default api;

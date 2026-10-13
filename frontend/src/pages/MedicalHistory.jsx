@@ -8,6 +8,8 @@ export default function MedicalHistory() {
   const [timeline, setTimeline] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [downloadingNoteId, setDownloadingNoteId] = useState(null);
+  const [actionFeedback, setActionFeedback] = useState({ type: '', message: '' });
 
   const fetchTimeline = async () => {
     setIsLoading(true);
@@ -22,6 +24,29 @@ export default function MedicalHistory() {
       setIsLoading(false);
     }
   };
+
+  const handleDownloadPdf = async (noteId) => {
+    if (downloadingNoteId) return;
+    setDownloadingNoteId(noteId);
+    setActionFeedback({ type: '', message: '' });
+
+    try {
+      await api.downloadNotePdf(noteId);
+      setActionFeedback({
+        type: 'success',
+        message: `Clinical PDF report for Note #${noteId} downloaded successfully!`
+      });
+      setTimeout(() => setActionFeedback({ type: '', message: '' }), 4000);
+    } catch (err) {
+      setActionFeedback({
+        type: 'error',
+        message: err.message || `Failed to download PDF for Note #${noteId}.`
+      });
+    } finally {
+      setDownloadingNoteId(null);
+    }
+  };
+
 
   useEffect(() => {
     fetchTimeline();
@@ -48,6 +73,17 @@ export default function MedicalHistory() {
           Start New Case
         </Link>
       </header>
+
+      {/* Action feedback for PDF downloads */}
+      {actionFeedback.message && (
+        <div
+          className={`alert ${actionFeedback.type === 'error' ? 'alert-danger' : 'alert-success'}`}
+          style={{ marginBottom: '1.5rem' }}
+        >
+          {actionFeedback.type === 'error' ? '⚠️ ' : '✓ '}
+          {actionFeedback.message}
+        </div>
+      )}
 
       {/* Error state with retry */}
       {error && (
@@ -137,17 +173,19 @@ export default function MedicalHistory() {
                     💬 View Consultation Case
                   </Link>
 
-                  {/* Stage 8 PDF placeholder */}
+                  {/* Functional Stage 8 PDF Download Button */}
                   <button
                     type="button"
                     className="btn btn-outline"
-                    style={{ fontSize: '0.88rem', opacity: 0.7, cursor: 'not-allowed' }}
-                    disabled
-                    title="PDF downloading will be implemented in Stage 8"
+                    style={{ fontSize: '0.88rem', padding: '0.5rem 1.15rem' }}
+                    onClick={() => handleDownloadPdf(entry.note_id)}
+                    disabled={downloadingNoteId === entry.note_id}
+                    title="Download authoritative clinical record as PDF"
                   >
-                    📥 Download PDF (Stage 8)
+                    {downloadingNoteId === entry.note_id ? '⏳ Generating PDF...' : '📥 Download PDF'}
                   </button>
                 </footer>
+
               </div>
             </div>
           ))}

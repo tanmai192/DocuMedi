@@ -27,6 +27,9 @@ export default function NoteDetail() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [pdfError, setPdfError] = useState('');
+  const [pdfSuccess, setPdfSuccess] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -90,6 +93,23 @@ export default function NoteDetail() {
     setError('');
   };
 
+  const handleDownloadPdf = async () => {
+    if (!noteId || isDownloadingPdf) return;
+    setIsDownloadingPdf(true);
+    setPdfError('');
+    setPdfSuccess(false);
+
+    try {
+      await api.downloadNotePdf(noteId);
+      setPdfSuccess(true);
+      setTimeout(() => setPdfSuccess(false), 4000);
+    } catch (err) {
+      setPdfError(err.message || 'Failed to download clinical note PDF.');
+    } finally {
+      setIsDownloadingPdf(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="spinner-container">
@@ -129,16 +149,18 @@ export default function NoteDetail() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-          {/* PDF Download Placeholder explicitly documented for Stage 8 */}
+          {/* Functional PDF Download Button */}
           <button
             type="button"
             className="btn btn-outline"
-            style={{ fontSize: '0.88rem', opacity: 0.75, cursor: 'not-allowed' }}
-            title="PDF generation is planned for Stage 8"
-            disabled
+            style={{ fontSize: '0.88rem' }}
+            title="Download authoritative clinical record as PDF"
+            onClick={handleDownloadPdf}
+            disabled={isDownloadingPdf}
           >
-            📄 Download PDF (Stage 8)
+            {isDownloadingPdf ? '⏳ Generating PDF...' : '📄 Download PDF'}
           </button>
+
 
           {!isEditing ? (
             <button
@@ -179,6 +201,19 @@ export default function NoteDetail() {
           ✓ Clinical note updated successfully in your records!
         </div>
       )}
+
+      {pdfSuccess && (
+        <div className="alert alert-success" style={{ maxWidth: '900px', margin: '0 auto 1.5rem' }}>
+          ✓ Clinical PDF report generated and downloaded successfully!
+        </div>
+      )}
+
+      {pdfError && (
+        <div className="alert alert-danger" style={{ maxWidth: '900px', margin: '0 auto 1.5rem' }}>
+          ⚠️ {pdfError}
+        </div>
+      )}
+
 
       {error && (
         <div className="alert alert-danger" style={{ maxWidth: '900px', margin: '0 auto 1.5rem' }}>

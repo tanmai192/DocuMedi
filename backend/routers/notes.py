@@ -2,15 +2,18 @@
 routers/notes.py — Endpoints for retrieving, viewing, updating, and timeline visualization of saved patient notes.
 """
 
+from datetime import datetime
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Response
 from sqlalchemy.orm import Session
 from database import get_db
 from models import Patient, PatientNote
 from dependencies import get_current_patient
 from schemas import PatientNoteResponse, SaveNoteRequest, TimelineEntryResponse
+from services.pdf_service import generate_patient_note_pdf
 
 router = APIRouter(prefix="/notes", tags=["Patient Notes"])
+
 
 
 def generate_timeline_summary(note: PatientNote) -> str:
@@ -102,6 +105,66 @@ def get_patient_timeline(
         )
 
     return timeline_entries
+
+
+@router.get(
+    "/{note_id}/pdf",
+    summary="Download professional PDF report of a saved clinical note"
+)
+def download_patient_note_pdf(
+    note_id: int,
+    current_patient: Patient = Depends(get_current_patient),
+    db: Session = Depends(get_db)
+):
+    """
+    Generates and returns an authoritative, downloadable PDF for a saved
+    patient clinical note.
+    
+    Security & Isolation:
+    - Requires valid Bearer JWT authentication.
+    - Strictly checks that note.patient_id == current_patient.id.
+    - Returns 404 if note does not exist.
+    - Returns 403 Forbidden if the note belongs to another patient.
+    """
+    note = db.query(PatientNote).filter(PatientNote.id == note_id).first()
+    if not note:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Patient clinical note not found"
+        )
+
+    if note.patient_id != current_patient.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access forbidden: you cannot access another patient's medical records"
+        )
+
+    # Determine safe filename formatted as DocuMedi_Report_YYYY-MM-DD.pdf
+    date_str = note.created_at.strftime("%Y-%m-%d") if note.created_at else datetime.now().strftime("%Y-%m-%d")
+    filename = f"DocuMedi_Report_{date_str}.pdf"
+
+    try:
+        pdf_bytes = generate_patient_note_pdf(
+            note=note,
+            patient=current_patient,
+            case=note.case
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate clinical PDF report: {str(e)}"
+        )
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        }
+    )
 
 
 @router.get(
