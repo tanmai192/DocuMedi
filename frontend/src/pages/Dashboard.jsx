@@ -1,14 +1,32 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import api from '../services/api';
 
 export default function Dashboard() {
   const { patient } = useAuth();
+  const [cases, setCases] = useState([]);
+  const [isLoadingCases, setIsLoadingCases] = useState(true);
+  const [error, setError] = useState('');
 
-  // In Stage 4, cases and notes endpoints will be implemented in Stages 5-7.
-  // We display accurate live stats (0 saved notes) and a friendly, encouraging empty state.
-  const savedNotesCount = 0;
-  const activeCasesCount = 0;
+  useEffect(() => {
+    async function loadDashboardData() {
+      try {
+        const fetchedCases = await api.getCases();
+        setCases(fetchedCases || []);
+      } catch (err) {
+        console.warn('Could not load patient cases:', err.message);
+        setError('Unable to load recent consultations.');
+      } finally {
+        setIsLoadingCases(false);
+      }
+    }
+
+    loadDashboardData();
+  }, []);
+
+  const activeCasesCount = cases.filter((c) => c.status === 'active').length;
+  const savedNotesCount = 0; // Stage 6 will implement saved notes count
 
   return (
     <div className="dashboard-container">
@@ -17,8 +35,8 @@ export default function Dashboard() {
         <div className="hero-text">
           <h1>Welcome, {patient?.full_name || 'Patient'}!</h1>
           <p>
-            Your health story, organized. Describe health concerns, talk with our
-            clinical case-taking assistant, and generate structured clinical records you can save and download.
+            Your health story, organized. Describe health concerns through an empathetic conversational
+            intake session, and build verifiable personal clinical documentation.
           </p>
         </div>
         <div className="hero-cta">
@@ -34,6 +52,19 @@ export default function Dashboard() {
 
       {/* Patient Stats Grid */}
       <section className="stats-grid">
+        <div className="stat-card">
+          <div className="stat-icon green">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 14 14" />
+            </svg>
+          </div>
+          <div>
+            <div className="stat-number">{activeCasesCount}</div>
+            <div className="stat-label">Active Consultations</div>
+          </div>
+        </div>
+
         <div className="stat-card">
           <div className="stat-icon teal">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -51,19 +82,6 @@ export default function Dashboard() {
         </div>
 
         <div className="stat-card">
-          <div className="stat-icon green">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <circle cx="12" cy="12" r="10" />
-              <polyline points="12 6 12 12 14 14" />
-            </svg>
-          </div>
-          <div>
-            <div className="stat-number">{activeCasesCount}</div>
-            <div className="stat-label">Active Consultations</div>
-          </div>
-        </div>
-
-        <div className="stat-card">
           <div className="stat-icon blue">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
@@ -71,28 +89,35 @@ export default function Dashboard() {
             </svg>
           </div>
           <div>
-            <div className="stat-number">Active</div>
-            <div className="stat-label">Account Status</div>
+            <div className="stat-number">{cases.length}</div>
+            <div className="stat-label">Total Case Intakes</div>
           </div>
         </div>
       </section>
 
-      {/* Recent Notes Section with Encouraging Empty State */}
+      {/* Recent Consultations Section */}
       <section style={{ marginBottom: '2.5rem' }}>
         <div className="section-header">
-          <h2 className="section-title">Recent Clinical Notes</h2>
-          <Link to="/history" className="btn btn-outline" style={{ padding: '0.45rem 1rem', fontSize: '0.88rem' }}>
-            View Full Timeline →
-          </Link>
+          <h2 className="section-title">Your Case Consultations</h2>
+          {cases.length > 0 && (
+            <Link to="/cases/new" className="btn btn-outline" style={{ padding: '0.45rem 1rem', fontSize: '0.88rem' }}>
+              + New Intake
+            </Link>
+          )}
         </div>
 
-        {savedNotesCount === 0 ? (
+        {isLoadingCases ? (
+          <div className="card" style={{ textAlign: 'center', padding: '2rem' }}>
+            <div className="spinner" style={{ margin: '0 auto 1rem' }}></div>
+            <p style={{ color: 'var(--color-slate-600)', fontSize: '0.9rem' }}>Loading consultation records...</p>
+          </div>
+        ) : cases.length === 0 ? (
           <div className="empty-state-card">
             <div className="empty-state-icon">📋</div>
-            <h3 className="empty-state-title">No Medical Notes Saved Yet</h3>
+            <h3 className="empty-state-title">No Case Consultations Yet</h3>
             <p className="empty-state-desc">
-              When you complete a case-taking consultation with DocuMedi AI, your structured 11-section
-              clinical notes and downloadable PDF reports will appear here.
+              Start your first conversation with the DocuMedi Clinical Case-Taking Assistant.
+              It will ask you structured questions about your symptoms and medical history.
             </p>
             <Link to="/cases/new" className="btn btn-primary">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -102,7 +127,50 @@ export default function Dashboard() {
               Start Your First Case
             </Link>
           </div>
-        ) : null}
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+            {cases.map((c) => (
+              <div
+                key={c.id}
+                className="card"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '1.25rem 1.5rem',
+                  gap: '1rem',
+                  flexWrap: 'wrap',
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.35rem' }}>
+                    <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--color-dark)' }}>
+                      {c.case_title}
+                    </h3>
+                    <span className={`status-badge ${c.status === 'active' ? 'active' : 'completed'}`}>
+                      {c.status === 'active' ? 'Active' : 'Completed'}
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '0.82rem', color: 'var(--color-slate-600)' }}>
+                    Started on {new Date(c.created_at).toLocaleDateString()} at{' '}
+                    {new Date(c.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} •{' '}
+                    {c.message_count} {c.message_count === 1 ? 'message' : 'messages'}
+                  </p>
+                </div>
+
+                <div>
+                  <Link
+                    to={`/cases/${c.id}`}
+                    className={`btn ${c.status === 'active' ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ padding: '0.5rem 1.1rem', fontSize: '0.88rem' }}
+                  >
+                    {c.status === 'active' ? 'Resume Consultation →' : 'View Dialogue →'}
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Account Info Card */}

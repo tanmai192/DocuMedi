@@ -8,7 +8,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Profile from './pages/Profile';
-import NewCasePlaceholder from './pages/NewCasePlaceholder';
+import CaseChat from './pages/CaseChat';
 import HistoryPlaceholder from './pages/HistoryPlaceholder';
 import NotFound from './pages/NotFound';
 import './styles/index.css';
@@ -55,10 +55,19 @@ export default function App() {
                 path="/cases/new"
                 element={
                   <ProtectedRoute>
-                    <NewCasePlaceholder />
+                    <CaseChat />
                   </ProtectedRoute>
                 }
               />
+              <Route
+                path="/cases/:caseId"
+                element={
+                  <ProtectedRoute>
+                    <CaseChat />
+                  </ProtectedRoute>
+                }
+              />
+
               <Route
                 path="/history"
                 element={

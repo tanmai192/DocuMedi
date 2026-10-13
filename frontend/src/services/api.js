@@ -104,6 +104,40 @@ class ApiClient {
       method: 'GET',
     });
   }
+
+  // --- Cases & Conversational AI Endpoints (Stage 5) ---
+
+  async createCase(caseTitle = 'Health Concern Consultation') {
+    return this.request('/cases', {
+      method: 'POST',
+      body: JSON.stringify({ case_title: caseTitle }),
+    });
+  }
+
+  async getCases() {
+    return this.request('/cases', {
+      method: 'GET',
+    });
+  }
+
+  async getCaseDetails(caseId) {
+    return this.request(`/cases/${caseId}`, {
+      method: 'GET',
+    });
+  }
+
+  async sendMessage(caseId, messageContent) {
+    return this.request(`/cases/${caseId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ message_content: messageContent }),
+    });
+  }
+
+  async endCase(caseId) {
+    return this.request(`/cases/${caseId}/end`, {
+      method: 'POST',
+    });
+  }
 }
 
 export const api = new ApiClient(API_BASE_URL);
