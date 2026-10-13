@@ -138,7 +138,42 @@ class ApiClient {
       method: 'POST',
     });
   }
+
+  // --- Notes Endpoints (Stage 6) ---
+
+  async generateNote(caseId) {
+    return this.request(`/cases/${caseId}/generate-note`, {
+      method: 'POST',
+    });
+  }
+
+  async saveCaseNote(caseId, noteData) {
+    return this.request(`/cases/${caseId}/notes`, {
+      method: 'POST',
+      body: JSON.stringify(noteData),
+    });
+  }
+
+  async getNotes() {
+    return this.request('/notes', {
+      method: 'GET',
+    });
+  }
+
+  async getNoteDetails(noteId) {
+    return this.request(`/notes/${noteId}`, {
+      method: 'GET',
+    });
+  }
+
+  async updateNote(noteId, noteData) {
+    return this.request(`/notes/${noteId}`, {
+      method: 'PUT',
+      body: JSON.stringify(noteData),
+    });
+  }
 }
 
 export const api = new ApiClient(API_BASE_URL);
 export default api;
+

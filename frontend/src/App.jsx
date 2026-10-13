@@ -9,9 +9,13 @@ import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Profile from './pages/Profile';
 import CaseChat from './pages/CaseChat';
+import NoteReview from './pages/NoteReview';
+import NoteDetail from './pages/NoteDetail';
+
 import HistoryPlaceholder from './pages/HistoryPlaceholder';
 import NotFound from './pages/NotFound';
 import './styles/index.css';
+
 
 export default function App() {
   return (
@@ -67,6 +71,23 @@ export default function App() {
                   </ProtectedRoute>
                 }
               />
+              <Route
+                path="/cases/:caseId/review-note"
+                element={
+                  <ProtectedRoute>
+                    <NoteReview />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/notes/:noteId"
+                element={
+                  <ProtectedRoute>
+                    <NoteDetail />
+                  </ProtectedRoute>
+                }
+              />
+
 
               <Route
                 path="/history"

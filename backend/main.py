@@ -7,7 +7,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-from routers import auth, cases
+from routers import auth, cases, notes
 
 load_dotenv()
 
@@ -39,6 +39,8 @@ app.add_middleware(
 # Register API Routers
 app.include_router(auth.router)
 app.include_router(cases.router)
+app.include_router(notes.router)
+
 
 
 

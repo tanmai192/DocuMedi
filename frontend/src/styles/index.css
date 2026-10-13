@@ -919,3 +919,131 @@ a:hover {
   color: #166534;
   margin-bottom: 0.85rem;
 }
+
+/* =========================================================
+   Stage 6: Clinical Note Review & Detail Styling
+   ========================================================= */
+
+.document-sheet {
+  background-color: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-card);
+  padding: 2.5rem 3rem;
+  max-width: 900px;
+  margin: 0 auto 3rem;
+}
+
+.document-header {
+  border-bottom: 2px solid var(--color-border-light);
+  padding-bottom: 1.5rem;
+  margin-bottom: 2rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.document-title-block h1 {
+  font-size: 1.65rem;
+  font-weight: 800;
+  color: var(--color-dark);
+  letter-spacing: -0.02em;
+  margin-bottom: 0.25rem;
+}
+
+.document-meta {
+  font-size: 0.85rem;
+  color: var(--color-slate-600);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  margin-top: 0.5rem;
+}
+
+.document-section {
+  margin-bottom: 1.75rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.document-section:last-of-type {
+  border-bottom: none;
+}
+
+.document-section-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-primary-hover);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+}
+
+.document-section-number {
+  background-color: var(--color-primary-ultralight);
+  color: var(--color-primary);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.document-section-body {
+  font-size: 0.96rem;
+  line-height: 1.65;
+  color: var(--color-dark-muted);
+  white-space: pre-wrap;
+}
+
+.document-textarea {
+  width: 100%;
+  min-height: 90px;
+  padding: 0.8rem 1rem;
+  font-family: inherit;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background-color: #fafafa;
+  color: var(--color-dark);
+  resize: vertical;
+  transition: all 0.15s ease;
+}
+
+.document-textarea:focus {
+  outline: none;
+  background-color: #ffffff;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.15);
+}
+
+.document-actions-sticky {
+  position: sticky;
+  top: 70px;
+  z-index: 40;
+  background-color: rgba(248, 250, 252, 0.95);
+  backdrop-filter: blur(8px);
+  padding: 0.85rem 0;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 768px) {
+  .document-sheet {
+    padding: 1.5rem 1.25rem;
+  }
+}

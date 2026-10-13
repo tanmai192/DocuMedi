@@ -6,19 +6,24 @@ import api from '../services/api';
 export default function Dashboard() {
   const { patient } = useAuth();
   const [cases, setCases] = useState([]);
-  const [isLoadingCases, setIsLoadingCases] = useState(true);
+  const [notes, setNotes] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
     async function loadDashboardData() {
       try {
-        const fetchedCases = await api.getCases();
+        const [fetchedCases, fetchedNotes] = await Promise.all([
+          api.getCases(),
+          api.getNotes(),
+        ]);
         setCases(fetchedCases || []);
+        setNotes(fetchedNotes || []);
       } catch (err) {
-        console.warn('Could not load patient cases:', err.message);
-        setError('Unable to load recent consultations.');
+        console.warn('Could not load dashboard data:', err.message);
+        setError('Unable to load some medical records.');
       } finally {
-        setIsLoadingCases(false);
+        setIsLoading(false);
       }
     }
 
@@ -26,7 +31,7 @@ export default function Dashboard() {
   }, []);
 
   const activeCasesCount = cases.filter((c) => c.status === 'active').length;
-  const savedNotesCount = 0; // Stage 6 will implement saved notes count
+  const savedNotesCount = notes.length;
 
   return (
     <div className="dashboard-container">
@@ -36,7 +41,7 @@ export default function Dashboard() {
           <h1>Welcome, {patient?.full_name || 'Patient'}!</h1>
           <p>
             Your health story, organized. Describe health concerns through an empathetic conversational
-            intake session, and build verifiable personal clinical documentation.
+            intake session, and generate structured clinical records you can review, edit, and keep.
           </p>
         </div>
         <div className="hero-cta">
@@ -95,29 +100,27 @@ export default function Dashboard() {
         </div>
       </section>
 
-      {/* Recent Consultations Section */}
+      {/* Saved Patient Notes Section */}
       <section style={{ marginBottom: '2.5rem' }}>
         <div className="section-header">
-          <h2 className="section-title">Your Case Consultations</h2>
-          {cases.length > 0 && (
-            <Link to="/cases/new" className="btn btn-outline" style={{ padding: '0.45rem 1rem', fontSize: '0.88rem' }}>
-              + New Intake
-            </Link>
-          )}
+          <h2 className="section-title">Saved Clinical Notes</h2>
+          <span style={{ fontSize: '0.85rem', color: 'var(--color-slate-600)' }}>
+            {savedNotesCount} {savedNotesCount === 1 ? 'note' : 'notes'} recorded
+          </span>
         </div>
 
-        {isLoadingCases ? (
+        {isLoading ? (
           <div className="card" style={{ textAlign: 'center', padding: '2rem' }}>
             <div className="spinner" style={{ margin: '0 auto 1rem' }}></div>
-            <p style={{ color: 'var(--color-slate-600)', fontSize: '0.9rem' }}>Loading consultation records...</p>
+            <p style={{ color: 'var(--color-slate-600)', fontSize: '0.9rem' }}>Loading records...</p>
           </div>
-        ) : cases.length === 0 ? (
+        ) : savedNotesCount === 0 ? (
           <div className="empty-state-card">
             <div className="empty-state-icon">📋</div>
-            <h3 className="empty-state-title">No Case Consultations Yet</h3>
+            <h3 className="empty-state-title">No Medical Notes Saved Yet</h3>
             <p className="empty-state-desc">
-              Start your first conversation with the DocuMedi Clinical Case-Taking Assistant.
-              It will ask you structured questions about your symptoms and medical history.
+              When you complete a case-taking consultation with DocuMedi, your structured 11-section
+              clinical notes will be saved and accessible here.
             </p>
             <Link to="/cases/new" className="btn btn-primary">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -128,6 +131,62 @@ export default function Dashboard() {
             </Link>
           </div>
         ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+            {notes.map((n) => (
+              <div
+                key={n.id}
+                className="card"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '1.25rem 1.5rem',
+                  gap: '1rem',
+                  flexWrap: 'wrap',
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.35rem' }}>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-primary)', backgroundColor: 'var(--color-primary-ultralight)', padding: '0.15rem 0.5rem', borderRadius: '4px' }}>
+                      NOTE #{n.id}
+                    </span>
+                    <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--color-dark)' }}>
+                      {n.chief_complaint?.slice(0, 70) || 'Clinical Note'}
+                    </h3>
+                  </div>
+                  <p style={{ fontSize: '0.82rem', color: 'var(--color-slate-600)' }}>
+                    Saved on {new Date(n.created_at).toLocaleDateString()} at{' '}
+                    {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • Linked to Case #{n.case_id}
+                  </p>
+                </div>
+
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <Link
+                    to={`/notes/${n.id}`}
+                    className="btn btn-primary"
+                    style={{ padding: '0.45rem 1rem', fontSize: '0.86rem' }}
+                  >
+                    View Note →
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Case Consultations Section */}
+      <section style={{ marginBottom: '2.5rem' }}>
+        <div className="section-header">
+          <h2 className="section-title">Case Consultation Sessions</h2>
+          {cases.length > 0 && (
+            <Link to="/cases/new" className="btn btn-outline" style={{ padding: '0.45rem 1rem', fontSize: '0.88rem' }}>
+              + New Intake
+            </Link>
+          )}
+        </div>
+
+        {cases.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
             {cases.map((c) => (
               <div
@@ -158,14 +217,24 @@ export default function Dashboard() {
                   </p>
                 </div>
 
-                <div>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                   <Link
                     to={`/cases/${c.id}`}
-                    className={`btn ${c.status === 'active' ? 'btn-primary' : 'btn-secondary'}`}
-                    style={{ padding: '0.5rem 1.1rem', fontSize: '0.88rem' }}
+                    className="btn btn-secondary"
+                    style={{ padding: '0.45rem 0.95rem', fontSize: '0.86rem' }}
                   >
-                    {c.status === 'active' ? 'Resume Consultation →' : 'View Dialogue →'}
+                    {c.status === 'active' ? 'Resume Consultation' : 'View Dialogue'}
                   </Link>
+
+                  {c.status === 'completed' && (
+                    <Link
+                      to={`/cases/${c.id}/review-note`}
+                      className="btn btn-primary"
+                      style={{ padding: '0.45rem 0.95rem', fontSize: '0.86rem' }}
+                    >
+                      Generate Note
+                    </Link>
+                  )}
                 </div>
               </div>
             ))}

@@ -295,16 +295,20 @@ export default function CaseChat() {
         <div className="chat-completed-banner">
           <h3>✓ Consultation Complete</h3>
           <p>
-            Your consultation history has been saved to MySQL. In <strong>Stage 6</strong>,
-            you will be able to review and edit your structured 11-section clinical patient note.
+            Your consultation dialogue has been saved to MySQL. You can now generate, review, and edit your
+            structured 11-section clinical patient note.
           </p>
-          <div style={{ display: 'flex', justifyContent: 'center', gap: '0.75rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <Link to={`/cases/${caseId}/review-note`} className="btn btn-primary" style={{ fontSize: '0.92rem' }}>
+              📋 Generate & Review Patient Note →
+            </Link>
             <Link to="/dashboard" className="btn btn-secondary" style={{ fontSize: '0.88rem' }}>
               Return to Dashboard
             </Link>
           </div>
         </div>
       ) : (
+
         /* Active Input Area */
         <div className="chat-input-area">
           <form className="chat-form" onSubmit={handleSendMessage}>
