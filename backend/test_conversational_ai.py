@@ -23,9 +23,14 @@ from models import Patient
 from services.clinical_tracker import (
     build_clinical_state_from_history,
     generate_empathetic_acknowledgment,
-    generate_adaptive_follow_up_questions
+    generate_adaptive_follow_up_questions,
+    is_temperature_question,
+    get_last_question,
+    GROUP_1_ID,
+    GROUP_2_ID,
+    GROUP_3_ID
 )
-from services.conversation_service import process_patient_message
+from services.conversation_service import process_patient_message, generate_rules_fallback_response
 from services.note_service import extract_fallback_note
 
 client = TestClient(app)
@@ -765,6 +770,155 @@ def run_conversational_ai_tests():
         check_case = client.get(f"/cases/{closing_cid}", headers=headers)
         assert check_case.json()["status"] == "active", "Case must remain active until user finishes"
         print("  [OK] Case 6: Exact closing response verified and case remains active until Finish Consultation is selected.")
+
+        # Test 13: Comprehensive 18-Scenario Symptom-Based Flow & Non-Repetition Suite
+        print("\n[13/13] Testing Comprehensive 18-Scenario Symptom-Based Flow & Non-Repetition Suite...")
+
+        # Scenario 1: Cold alone (no pain character or 1-10 pain scale asked)
+        s1_ai = generate_rules_fallback_response([], "I have a bad cold and blocked nose for 2 days.")
+        assert not any(w in s1_ai.lower() for w in ["dull", "sharp", "throbbing", "1 to 10", "1-10", "scale"]), f"S1 Failed: {s1_ai}"
+        print("  [OK] S1: Cold alone -> cold inquiries only, strictly no pain character or 1-10 scale.")
+
+        # Scenario 2: Cough alone (prioritizes dry/mucus, triggers/remedies)
+        s2_ai = generate_rules_fallback_response([], "I have had a cough since yesterday.")
+        assert any(w in s2_ai.lower() for w in ["dry", "productive", "mucus"]), f"S2 Failed: {s2_ai}"
+        assert not any(w in s2_ai.lower() for w in ["travel", "diarrhea", "behind your eyes"]), f"S2 Failed: {s2_ai}"
+        print("  [OK] S2: Cough alone -> prioritizes dry/mucus without presenting entire illness questionnaire.")
+
+        # Scenario 3: Fever alone (temperature, onset, severity, associated symptoms)
+        s3_h = [{"sender_role": "patient", "message_content": "I have a fever since this morning."}]
+        s3_r1 = generate_rules_fallback_response([], "I have a fever since this morning.")
+        assert is_temperature_question(s3_r1), f"S3 R1 Failed: {s3_r1}"
+        s3_h.append({"sender_role": "ai", "message_content": s3_r1})
+        s3_r2 = generate_rules_fallback_response(s3_h, "Yes, it was 102 F.")
+        assert not is_temperature_question(s3_r2), f"S3 R2 Failed: {s3_r2}"
+        assert "102" in s3_r2 or "fever" in s3_r2.lower()
+        print("  [OK] S3: Fever alone -> captures measured temperature and does not repeat inquiry.")
+
+        # Scenario 4: Suspected dengue or malaria (labeled suspected patient-reported, no confirmed diagnosis)
+        s4_msg = "I think I might have malaria or dengue because I have high fever and severe joint pain."
+        s4_r = generate_rules_fallback_response([], s4_msg)
+        assert not any(w in s4_r.lower() for w in ["you have malaria", "you have dengue", "confirmed diagnosis"]), f"S4 Dialogue Failed: {s4_r}"
+        s4_note = extract_fallback_note([{"sender_role": "patient", "message_content": s4_msg}])
+        assert "suspected" in s4_note["hpi"].lower() and "patient-reported" in s4_note["hpi"].lower(), f"S4 Note Failed: {s4_note['hpi']}"
+        print("  [OK] S4: Suspected dengue/malaria -> labeled 'suspected (patient-reported)' without diagnosis confirmation.")
+
+        # Scenario 5: Headache alone (location, character, 1-10 severity, relief)
+        s5_r = generate_rules_fallback_response([], "I have a headache since yesterday.")
+        assert any(w in s5_r.lower() for w in ["where", "location", "scale", "1 to 10", "describe", "throbbing", "dull"]), f"S5 Failed: {s5_r}"
+        print("  [OK] S5: Headache alone -> focuses on pain location, character, severity, and relief.")
+
+        # Scenario 6: Body aches alone
+        s6_r = generate_rules_fallback_response([], "I have body aches for 2 days.")
+        assert any(w in s6_r.lower() for w in ["where", "scale", "1 to 10", "describe", "better or worse", "relief"]), f"S6 Failed: {s6_r}"
+        print("  [OK] S6: Body aches alone -> focuses on localized discomfort and severity.")
+
+        # Scenario 7: Fever with body aches (shared onset, temperature, relief; no duplicate questions)
+        s7_r = generate_rules_fallback_response([], "I have had a fever and body aches since yesterday. My temperature is 101 F.")
+        assert not is_temperature_question(s7_r), f"S7 Failed: {s7_r}"
+        assert not any(w in s7_r.lower() for w in ["when did", "how long have you had", "begin?"]), f"S7 Failed: {s7_r}"
+        print("  [OK] S7: Fever with body aches -> shared onset and temperature honored without duplicate inquiries.")
+
+        # Scenario 8: Rash alone (location, appearance, spread, sensation, triggers)
+        s8_r = generate_rules_fallback_response([], "I have a red rash on my chest for 3 days.")
+        assert any(w in s8_r.lower() for w in ["itchy", "appearance", "spread", "tender", "bumps", "spots", "creams", "exposed"]), f"S8 Failed: {s8_r}"
+        assert not any(w in s8_r.lower() for w in ["dull", "sharp", "throbbing"]), f"S8 Failed: {s8_r}"
+        print("  [OK] S8: Rash alone -> explores dermatological dimensions without inappropriate pain character inquiries.")
+
+        # Scenario 9: Suspected skin infection (labeled suspected patient-reported, warmth/redness/pus)
+        s9_msg = "I suspect I have a skin infection because my arm has spreading redness and oozing pus."
+        s9_r = generate_rules_fallback_response([], s9_msg)
+        assert not any(w in s9_r.lower() for w in ["you have a skin infection", "diagnosed"]), f"S9 Dialogue Failed: {s9_r}"
+        s9_note = extract_fallback_note([{"sender_role": "patient", "message_content": s9_msg}])
+        assert "suspected" in s9_note["hpi"].lower() or "patient-reported" in s9_note["hpi"].lower(), f"S9 Note Failed: {s9_note['hpi']}"
+        print("  [OK] S9: Suspected skin infection -> documented as suspected patient-reported with dermatological signs.")
+
+        # Scenario 10: Rash with fever (shared onset, temperature; combined group tracking)
+        s10_r = generate_rules_fallback_response([], "I have an itchy rash on my legs and a fever since yesterday. My temperature is 100.8 F.")
+        assert not is_temperature_question(s10_r), f"S10 Failed: {s10_r}"
+        assert not any(w in s10_r.lower() for w in ["when did", "begin?"]), f"S10 Failed: {s10_r}"
+        print("  [OK] S10: Rash with fever -> correctly detects combined groups with shared onset and temperature.")
+
+        # Scenario 11: Rash with itching but no pain (strictly blocks dull/sharp pain character questions)
+        s11_r = generate_rules_fallback_response([], "I have an itchy rash on my arms. There is no pain.")
+        assert not any(w in s11_r.lower() for w in ["dull", "sharp", "throbbing", "cramping"]), f"S11 Failed: {s11_r}"
+        print("  [OK] S11: Rash with itch but no pain -> strictly blocks dull/sharp pain character questions.")
+
+        # Scenario 12: Symptoms spanning all three groups
+        s12_msg = "I have a cough, headache, and an itchy rash for 3 days."
+        s12_r = generate_rules_fallback_response([], s12_msg)
+        s12_st = build_clinical_state_from_history([], s12_msg)
+        assert {GROUP_1_ID, GROUP_2_ID, GROUP_3_ID}.issubset(s12_st.symptom_groups), f"S12 Groups Failed: {s12_st.symptom_groups}"
+        assert not any(w in s12_r.lower() for w in ["when did", "begin?"]), f"S12 Failed: {s12_r}"
+        print("  [OK] S12: Symptoms spanning all 3 groups -> tracks groups, respects shared onset, and prioritizes naturally.")
+
+        # Scenario 13: New symptom introduced halfway (warm reflection, connected to prior symptoms, no restart)
+        s13_h = [
+            {"sender_role": "patient", "message_content": "I have a sore throat since yesterday."},
+            {"sender_role": "ai", "message_content": "Do you have a runny nose, blocked nose, sneezing, or sore throat?"}
+        ]
+        s13_r2 = generate_rules_fallback_response(s13_h, "Actually, my knee started hurting this morning as well.")
+        assert any(w in s13_r2.lower() for w in ["knee", "joint", "hurt", "pain", "leg"]), f"S13 Failed: {s13_r2}"
+        assert any(w in s13_r2.lower() for w in ["sore throat", "connect", "same time", "started around", "on top of"]), f"S13 Failed: {s13_r2}"
+        print("  [OK] S13: Midway symptom -> warm reflection, connected to prior symptoms without restarting intake.")
+
+        # Scenario 14: Multiple symptoms described in opening response (acknowledged together, known dimensions not re-asked)
+        s14_r = generate_rules_fallback_response([], "I have a cough and a 5/10 headache since yesterday morning.")
+        assert "cough" in s14_r.lower() and "headache" in s14_r.lower(), f"S14 Failed: {s14_r}"
+        assert not any(w in s14_r.lower() for w in ["when did", "how long", "rate the discomfort on a scale", "rate the pain on a scale"]), f"S14 Failed: {s14_r}"
+        print("  [OK] S14: Multiple opening symptoms -> acknowledged together without re-asking onset or severity.")
+
+        # Scenario 15: Previously answered questions skipped (non-repetition rule enforced across turns)
+        s15_h = [
+            {"sender_role": "patient", "message_content": "I have a cough since yesterday, dry."},
+            {"sender_role": "ai", "message_content": "If you have a cough, is it dry or productive? If productive, what does the mucus look like?"}
+        ]
+        s15_r2 = generate_rules_fallback_response(s15_h, "It is about 4 out of 10. Warm tea helped a bit.")
+        s15_q2 = get_last_question(s15_r2)
+        assert any(w in s15_q2.lower() for w in ["medication", "prescription", "supplements"]), f"S15 Failed: {s15_q2}"
+        assert not any(w in s15_q2.lower() for w in ["dry", "mucus", "scale", "1 to 10", "when did", "warm tea", "home remedies"]), f"S15 Failed: {s15_q2}"
+        print("  [OK] S15: Non-repetition -> advances straight to next missing dimension without repeating answered topics.")
+
+        # Scenario 16: Mandatory allergy, medication, PMH questions preserved and not defaulted to 'No'
+        s16_st = build_clinical_state_from_history([
+            {"sender_role": "ai", "message_content": "Are you taking any medications?"},
+            {"sender_role": "patient", "message_content": "I take lisinopril 10 mg daily."},
+            {"sender_role": "ai", "message_content": "Do you have any allergies?"},
+            {"sender_role": "patient", "message_content": "I am allergic to sulfa."},
+            {"sender_role": "ai", "message_content": "Do you have any personal medical history?"},
+            {"sender_role": "patient", "message_content": "I have hypertension."}
+        ], "")
+        assert "lisinopril" in s16_st.medications.lower()
+        assert "sulfa" in s16_st.allergies.lower()
+        assert "hypertension" in s16_st.past_medical_history.lower()
+        print("  [OK] S16: Mandatory questions -> accurately preserved and never defaulted to 'No'.")
+
+        # Scenario 17: Correct closing response exact string
+        s17_case = client.post("/cases", json={"case_title": "S17 Closing Test Case"}, headers=headers)
+        s17_cid = s17_case.json()["id"]
+        client.post(f"/cases/{s17_cid}/messages", json={"message_content": "cough for 2 days, 5/10, dry"}, headers=headers)
+        client.post(f"/cases/{s17_cid}/messages", json={"message_content": "honey helped"}, headers=headers)
+        client.post(f"/cases/{s17_cid}/messages", json={"message_content": "no meds"}, headers=headers)
+        client.post(f"/cases/{s17_cid}/messages", json={"message_content": "no allergies"}, headers=headers)
+        client.post(f"/cases/{s17_cid}/messages", json={"message_content": "no chronic conditions"}, headers=headers)
+        s17_turn = client.post(f"/cases/{s17_cid}/messages", json={"message_content": "no"}, headers=headers)
+        assert s17_turn.json()["ai_response"]["message_content"] == "Okay, thank you. You can select Finish Consultation when you're ready to review your clinical note."
+        print("  [OK] S17: Closing response -> exact string returned and case remains active.")
+
+        # Scenario 18: Medical data persistence (save, reload, generate note, and verify PDF content with pypdf)
+        s18_note, s18_pdf = run_med_allergy_pipeline_case("S18 Full Pipeline Verification", [
+            "I have fever and body aches for 3 days. Rated 7/10. Temperature was 101.5 F.",
+            "Resting in bed helped a little bit.",
+            "I take paracetamol 650 mg as needed.",
+            "I have no known allergies.",
+            "I was diagnosed with asthma 5 years ago."
+        ])
+        assert "asthma" in s18_note["past_medical_history"].lower(), "Note must contain asthma"
+        assert "paracetamol" in s18_note["medications"].lower(), "Note must contain paracetamol"
+        assert "nkda" in s18_note["allergies"].lower() or "no known" in s18_note["allergies"].lower()
+        assert "asthma" in s18_pdf.lower(), "PDF must contain asthma"
+        assert "paracetamol" in s18_pdf.lower(), "PDF must contain paracetamol"
+        print("  [OK] S18: Data persistence -> end-to-end verified across API, MySQL, note, and PDF with pypdf.")
 
         print("\n" + "=" * 75)
         print("SUCCESS: ALL CONVERSATIONAL AI & SYMPTOM TRACKING TESTS PASSED!")

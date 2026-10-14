@@ -59,6 +59,9 @@ CRITICAL INSTRUCTIONS & MEDICAL SAFETY RULES:
    - If the patient explicitly denied chronic conditions or past medical history, write: "No chronic conditions reported".
    - If the patient reported uncertainty, write: "Uncertain".
    - If past medical history was not discussed or not provided, write EXACTLY: "Not provided". Never write "No" or "None".
+10. For Suspected Conditions (e.g. dengue, malaria, skin infection):
+   - Document explicitly as "suspected (patient-reported)" or "patient reports concern for...".
+   - NEVER state or confirm that the patient has dengue, malaria, or a confirmed bacterial infection.
 
 You must return a valid, strictly formatted JSON object with these EXACT 11 keys:
 {
@@ -136,6 +139,48 @@ def extract_fallback_note(history: List[Dict[str, str]]) -> Dict[str, str]:
             pres_items.append(f"rated at {state.severity}")
 
         hpi_parts.append(" ".join(pres_items) + ".")
+
+        if state.temperature:
+            hpi_parts.append(f"Temperature: {state.temperature}.")
+
+        if state.cold_symptoms:
+            hpi_parts.append(f"Cold symptoms: {state.cold_symptoms}.")
+
+        if state.cough_nature:
+            hpi_parts.append(f"Cough characteristics: {state.cough_nature}.")
+
+        if state.systemic_symptoms:
+            hpi_parts.append(f"Systemic symptoms: {state.systemic_symptoms}.")
+
+        if state.associated_aches:
+            hpi_parts.append(f"Associated aches: {state.associated_aches}.")
+
+        if state.pain_pattern:
+            hpi_parts.append(f"Pain pattern: {state.pain_pattern}.")
+
+        if state.pain_radiation:
+            hpi_parts.append(f"Pain radiation: {state.pain_radiation}.")
+
+        if state.rash_appearance:
+            hpi_parts.append(f"Rash appearance: {state.rash_appearance}.")
+
+        if state.rash_sensation:
+            hpi_parts.append(f"Rash sensation: {state.rash_sensation}.")
+
+        if state.rash_spread:
+            hpi_parts.append(f"Rash progression: {state.rash_spread}.")
+
+        if state.triggers_exposure:
+            hpi_parts.append(f"Triggers and exposures: {state.triggers_exposure}.")
+
+        if state.travel_exposure:
+            hpi_parts.append(f"Travel/ill contact exposure: {state.travel_exposure}.")
+
+        if state.prior_episodes:
+            hpi_parts.append(f"Prior history: {state.prior_episodes}.")
+
+        if state.suspected_conditions:
+            hpi_parts.append(f"Patient-reported concern: {', '.join(state.suspected_conditions)}.")
 
         if state.relieving_aggravating:
             ra = state.relieving_aggravating.strip()

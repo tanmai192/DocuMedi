@@ -79,7 +79,12 @@ EMERGENCY_PATTERNS = [
     r"\b(crushing|severe)\s+chest\s+pain\b",
     r"\bheart\s+attack\b",
     r"\bcan'?t\s+breathe\b",
+    r"\bdifficulty\s+breathing\b",
+    r"\bgasping\s+for\s+air\b",
+    r"\bstruggling\s+to\s+breathe\b",
     r"\bsevere\s+shortness\s+of\s+breath\b",
+    r"\b(?:swelling\s+in\s+(?:my\s+)?(?:face|tongue|throat|lips)|swollen\s+(?:face|tongue|throat|lips)|throat\s+closing(?:\s+up)?)\b",
+    r"\b(?:rash\s+spreading\s+rapidly|rapidly\s+spreading\s+rash|rash\s+worsening\s+rapidly)\b",
     r"\bface\s+(droop|numb)\b",
     r"\bsudden\s+(weakness|paralysis)\b",
     r"\bcoughing\s+(up\s+)?blood\b",
@@ -187,14 +192,24 @@ def format_clinical_state_context(state: ClinicalDialogueState) -> str:
     """Formats cumulative clinical memory and strict non-repetition rules for LLMs."""
     return f"""
 CURRENT CUMULATIVE PATIENT STATE:
+- Active Symptom Groups: {', '.join(state.symptom_groups) if state.symptom_groups else 'None identified yet'}
 - Active Reported Symptoms: {', '.join(state.symptoms) if state.symptoms else 'None identified yet'}
+- Suspected Conditions: {', '.join(state.suspected_conditions) if state.suspected_conditions else 'None'}
 - Newly Introduced in Latest Message: {', '.join(state.new_symptoms_in_turn) if state.new_symptoms_in_turn else 'None'}
 - Denied/Negative Symptoms: {', '.join(state.negative_symptoms) if state.negative_symptoms else 'None'}
 - Confirmed Clinical Details Already Provided by Patient:
   * Onset / Duration: {state.onset_duration or 'NOT ANSWERED'}
+  * Measured Temperature: {state.temperature or 'NOT ANSWERED'}
+  * Cold / Upper Respiratory Symptoms: {state.cold_symptoms or 'NOT ANSWERED'}
+  * Cough Nature / Mucus: {state.cough_nature or 'NOT ANSWERED'}
+  * Systemic Symptoms (chills/sweat/fatigue): {state.systemic_symptoms or 'NOT ANSWERED'}
+  * Associated Aches (headache/body aches/eye pain): {state.associated_aches or 'NOT ANSWERED'}
   * Severity / Pain Level: {state.severity or 'NOT ANSWERED'}
   * Character / Quality: {state.character or 'NOT ANSWERED'}
+  * Pain Pattern / Radiation: {state.pain_pattern or state.pain_radiation or 'NOT ANSWERED'}
   * Anatomical Location: {state.location or 'NOT ANSWERED'}
+  * Skin Rash / Changes (appearance/spread/sensation): {state.rash_appearance or state.rash_sensation or state.rash_spread or 'NOT ANSWERED'}
+  * Triggers / Exposures: {state.triggers_exposure or 'NOT ANSWERED'}
   * Relieving / Aggravating Factors: {state.relieving_aggravating or 'NOT ANSWERED'}
   * Current Medications: {state.medications or 'NOT ANSWERED'}
   * Allergies: {state.allergies or 'NOT ANSWERED'}
@@ -202,17 +217,18 @@ CURRENT CUMULATIVE PATIENT STATE:
 
 STRICT DIALOGUE RULES FOR YOUR RESPONSE:
 1. ACTIVE LISTENING: Briefly acknowledge or reflect what the patient JUST stated in their latest message.
-2. NEVER RE-ASK ANY CONFIRMED DETAILS:
-   - If Onset/Duration is confirmed ({state.onset_duration}), NEVER ask when it started or how long it has lasted.
-   - If Severity is confirmed ({state.severity}), NEVER ask for a 1-10 rating, severity, or discomfort level.
-   - If Character is confirmed ({state.character}), NEVER ask what it feels like or if it's dry/mucus.
-   - If Relieving/Aggravating Factors are confirmed ({state.relieving_aggravating}), NEVER ask what makes it better or worse, or what provides relief.
-   - If Medications are confirmed ({state.medications}), NEVER ask if they take medications.
-   - If Allergies are confirmed ({state.allergies}), NEVER ask about allergies.
-   - If Medical/Family History is confirmed ({state.past_medical_history or state.family_history}), NEVER ask about medical history or chronic conditions.
-3. NEW SYMPTOMS: If a new symptom was mentioned, warmly acknowledge it and explore how it connects to earlier symptoms.
-4. Ask ONLY ONE relevant next question focusing strictly on what is still marked 'NOT ANSWERED' above.
-5. FINAL CONFIRMATION & COMPLETION:
+2. GROUP-SPECIFIC QUESTIONING RULES:
+   - For a cold alone: ask cold-related questions. Do NOT ask whether the pain is dull, sharp, or throbbing. Do NOT ask for a 1-10 pain scale unless the patient reports pain.
+   - For a cough alone: prioritize cough-related questions (dry vs productive, mucus, triggers/relief) rather than the entire questionnaire.
+   - For an itchy rash without pain: focus on itch, appearance, spread, and exposures. Do NOT ask whether the pain is dull or sharp.
+   - Only ask whether pain is dull, sharp, throbbing, burning, or cramping IF the patient actually reports pain.
+   - For suspected dengue, malaria, or skin infections: document neutrally as 'suspected (patient-reported)' and NEVER confirm a diagnosis.
+3. NEVER RE-ASK ANY CONFIRMED DETAILS:
+   - If an attribute is confirmed above, NEVER ask for it again.
+4. NEW SYMPTOMS: If a new symptom was mentioned, warmly acknowledge it and explore how it connects to earlier symptoms without restarting previous groups.
+5. MANDATORY QUESTIONS: Ensure current medications, known allergies, and past medical history are asked before finalizing.
+6. Ask ONLY ONE relevant next question focusing strictly on what is still marked 'NOT ANSWERED' above.
+7. FINAL CONFIRMATION & COMPLETION:
    - If the previous AI message asked if there is anything else to include before finalizing (or invited the patient to finish), and the patient responded with 'no', 'nothing', 'nothing else', 'that's all', or 'I'm done', respond briefly:
      'Okay, thank you. You can select Finish Consultation when you're ready to review your clinical note.'
    - NEVER repeat the full clinical summary or re-ask the final confirmation question after the patient declines.
