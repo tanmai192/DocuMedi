@@ -3,7 +3,13 @@ main.py — FastAPI Application Entry Point for DocuMedi.
 DocuMedi: Your Health Story, Organized.
 """
 
+import sys
 import os
+
+backend_dir = os.path.dirname(os.path.abspath(__file__))
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,7 +17,7 @@ from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from dotenv import load_dotenv
 
 load_dotenv()
-backend_env = os.path.join(os.path.dirname(__file__), ".env")
+backend_env = os.path.join(backend_dir, ".env")
 if os.path.exists(backend_env):
     load_dotenv(backend_env)
 
