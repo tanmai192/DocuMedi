@@ -1,13 +1,24 @@
 /**
- * api.js — Centralized API service for DocuMedi
- * Connects the React frontend to the FastAPI backend.
+ * Clean and normalize API base URL:
+ * - Trims whitespace
+ * - Strips trailing slashes
+ * - Strips accidental paths like /docs or /auth/register if pasted by mistake
  */
+function cleanBaseUrl(url) {
+  if (!url || typeof url !== 'string') {
+    return 'http://127.0.0.1:8000';
+  }
+  let cleaned = url.trim();
+  cleaned = cleaned.replace(/\/+$/, '');
+  cleaned = cleaned.replace(/\/(?:docs|auth\/register|openapi\.json)$/i, '');
+  return cleaned.replace(/\/+$/, '') || 'http://127.0.0.1:8000';
+}
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+const API_BASE_URL = cleanBaseUrl(import.meta.env.VITE_API_BASE_URL);
 
 class ApiClient {
   constructor(baseUrl) {
-    this.baseUrl = baseUrl;
+    this.baseUrl = cleanBaseUrl(baseUrl);
   }
 
   /**
@@ -18,10 +29,18 @@ class ApiClient {
   }
 
   /**
+   * Safely formats endpoint URL preventing duplicate slashes
+   */
+  buildUrl(endpoint) {
+    const cleanEndpoint = endpoint ? (endpoint.startsWith('/') ? endpoint : `/${endpoint}`) : '';
+    return `${this.baseUrl}${cleanEndpoint}`;
+  }
+
+  /**
    * Base fetch wrapper that injects headers and handles JSON responses/errors
    */
   async request(endpoint, options = {}) {
-    const url = `${this.baseUrl}${endpoint}`;
+    const url = this.buildUrl(endpoint);
     const token = this.getToken();
 
     const headers = {
@@ -49,7 +68,7 @@ class ApiClient {
       }
 
       if (!response.ok) {
-        // Extract friendly error message from FastAPI HTTPException detail
+        // Extract friendly error message from FastAPI HTTPException detail or plain text
         let errorMessage = 'An unexpected error occurred. Please try again.';
         if (data && typeof data === 'object') {
           if (typeof data.detail === 'string') {
@@ -60,6 +79,16 @@ class ApiClient {
           } else if (data.message) {
             errorMessage = data.message;
           }
+        } else if (typeof data === 'string' && data.trim()) {
+          if (response.status === 400 && data.includes('CORS')) {
+            errorMessage = 'Cross-Origin Request Blocked (CORS error). Please verify allowed origins in backend configuration.';
+          } else if (response.status === 503) {
+            errorMessage = 'Database or server unavailable. Please ensure database connection is active.';
+          } else if (response.status === 500) {
+            errorMessage = 'DocuMedi server encountered an internal error. Please check server and database logs.';
+          } else {
+            errorMessage = data.trim();
+          }
         }
         const error = new Error(errorMessage);
         error.status = response.status;
@@ -69,9 +98,11 @@ class ApiClient {
 
       return data;
     } catch (err) {
-      // Network error or fetch abort
+      // Network error, CORS preflight failure, or fetch abort
       if (!err.status) {
-        throw new Error('Unable to connect to DocuMedi server. Please check your network or ensure backend is running.');
+        const error = new Error('Unable to connect to DocuMedi server. Please check your network or ensure backend is running.');
+        error.isNetworkError = true;
+        throw error;
       }
       throw err;
     }
@@ -185,7 +216,7 @@ class ApiClient {
    * Handles binary stream, safe filename extraction, and cleans up object URLs.
    */
   async downloadNotePdf(noteId, customFilename = null) {
-    const url = `${this.baseUrl}/notes/${noteId}/pdf`;
+    const url = this.buildUrl(`/notes/${noteId}/pdf`);
     const token = this.getToken();
 
     const headers = {};

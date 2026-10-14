@@ -4,12 +4,18 @@ DocuMedi: Your Health Story, Organized.
 """
 
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from dotenv import load_dotenv
-from routers import auth, cases, notes
 
 load_dotenv()
+backend_env = os.path.join(os.path.dirname(__file__), ".env")
+if os.path.exists(backend_env):
+    load_dotenv(backend_env)
+
+from routers import auth, cases, notes
 
 app = FastAPI(
     title="DocuMedi API",
@@ -17,31 +23,76 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Configure CORS for local React development
-origins = [
+# Allowed Origins for Local Development and Production Deployments
+default_origins = [
+    # Local Vite & CRA Dev Servers
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    # Vercel Production & Preview Deployments
+    "https://docu-medi-git-main-tanmai2.vercel.app",
+    "https://docu-medi-9m37rn7jh-tanmai2.vercel.app",
+    "https://docu-medi.vercel.app",
 ]
 
-frontend_url = os.getenv("FRONTEND_URL")
-if frontend_url and frontend_url not in origins:
-    origins.append(frontend_url)
+# Parse additional origins from FRONTEND_URL or ADDITIONAL_CORS_ORIGINS (supports comma-separated list)
+configured_origins = (os.getenv("FRONTEND_URL", "") + "," + os.getenv("ADDITIONAL_CORS_ORIGINS", "")).split(",")
+origins = list(default_origins)
 
+for entry in configured_origins:
+    clean_origin = entry.strip().rstrip("/")
+    if clean_origin and clean_origin not in origins:
+        origins.append(clean_origin)
+
+# Register CORS Middleware
+# allow_origin_regex permits any preview deployments matching https://docu-medi*.vercel.app
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_origin_regex=r"https:\/\/docu-medi.*\.vercel\.app",
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition", "Content-Length"],
+    max_age=600,
 )
+
+
+@app.on_event("startup")
+def on_startup():
+    """Safely verify and create database tables on startup if they do not exist."""
+    try:
+        from database import Base, engine
+        import models  # Register ORM models
+        if engine:
+            Base.metadata.create_all(bind=engine, checkfirst=True)
+    except Exception as e:
+        print(f"Notice: Initial table verification encountered an issue: {e}")
+
+
+@app.exception_handler(OperationalError)
+async def db_operational_error_handler(request: Request, exc: OperationalError):
+    """Handle database connection failures with a clean, descriptive JSON response."""
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Database connection error. Please ensure the database server is running and accessible."}
+    )
+
+
+@app.exception_handler(SQLAlchemyError)
+async def db_general_error_handler(request: Request, exc: SQLAlchemyError):
+    """Handle general database errors without exposing stack traces or sensitive schema details."""
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "A database error occurred while processing your request. Please try again later."}
+    )
+
 
 # Register API Routers
 app.include_router(auth.router)
 app.include_router(cases.router)
 app.include_router(notes.router)
-
-
 
 
 @app.get("/", tags=["Health"])
@@ -52,4 +103,34 @@ def home():
         "tagline": "Your Health Story, Organized.",
         "status": "online",
         "message": "DocuMedi Backend is running!"
+    }
+
+
+@app.get("/health", tags=["Health"])
+def health_check():
+    """
+    Detailed health check: verifies application status and database connectivity
+    without exposing sensitive credentials, hostnames, or secrets.
+    """
+    from database import engine
+    from sqlalchemy import text
+
+    db_status = "connected"
+    detail = "All systems operational"
+
+    if not engine:
+        db_status = "unconfigured"
+        detail = "DATABASE_URL is not configured."
+    else:
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+        except Exception:
+            db_status = "disconnected"
+            detail = "Database connection unavailable. Verify DATABASE_URL in environment configuration."
+
+    return {
+        "status": "healthy" if db_status == "connected" else "degraded",
+        "database": db_status,
+        "detail": detail,
     }
