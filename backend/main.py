@@ -131,9 +131,11 @@ def health_check():
         try:
             with engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
-        except Exception:
+        except Exception as e:
+            import re
             db_status = "disconnected"
-            detail = "Database connection unavailable. Verify DATABASE_URL in environment configuration."
+            clean_err = re.sub(r":([^:@\s]{2,})@", ":****@", str(e))
+            detail = f"Database connection failed: {clean_err}"
 
     return {
         "status": "healthy" if db_status == "connected" else "degraded",
